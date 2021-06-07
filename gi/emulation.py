@@ -57,6 +57,9 @@ class ImgEmulator:
     object_gen: object = None
     object_gen_args: tuple = ()
 
+    iprofiles_gen: object = generate_beams
+    iprofiles_gen_args: tuple = ()
+
     use_backet: bool = True
 
     def __post_init__(self):
@@ -78,10 +81,11 @@ class ImgEmulator:
         """
         for i in range(self.imgs_number):
             ref_img, obj_img = \
-                generate_beams(self.area_size, self.npoints, self.wl,
-                               self.init_field, self.init_field_gen, self.init_gen_args,
-                               self.object_gen, self.object_gen_args,
-                               self.z_obj, self.z_ref)
+                self.iprofiles_gen(self.area_size, self.npoints, self.wl,
+                                   self.init_field, self.init_field_gen, self.init_gen_args,
+                                   self.object_gen, self.object_gen_args,
+                                   self.z_obj, self.z_ref,
+                                   *self.iprofiles_gen_args)
             if self.use_backet:
                 self.obj_data[i] = np.sum(obj_img)
             else:
