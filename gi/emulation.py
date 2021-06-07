@@ -31,8 +31,6 @@ def generate_beams(area_size, npoints, wl,
 
 
 def data_correlation(obj_data, ref_data):
-    imgs_number, img_height, img_width = ref_data.shape
-
     def gi(pixel_data):
         return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]
     return np.apply_along_axis(gi, 0, ref_data)

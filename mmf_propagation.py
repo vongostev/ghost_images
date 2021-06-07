@@ -19,7 +19,7 @@ n1 = 1.45
 wl = 0.6328  # wavelength in microns
 
 # calculate the field on an area larger than the diameter of the fiber
-areaSize = 3.5*radius
+area_size = 3.5*radius
 npoints = 2**7  # resolution of the window
 
 
@@ -69,7 +69,7 @@ def generate_beams(area_size, npoints, wl,
 
 
 # Create the fiber object
-profile = pyMMF.IndexProfile(npoints=npoints, areaSize=areaSize)
+profile = pyMMF.IndexProfile(npoints=npoints, area_size=area_size)
 # Initialize the index profile
 profile.initStepIndex(n1=n1, a=radius, NA=NA)
 # Instantiate the solver
@@ -91,7 +91,7 @@ fiber_length = 50e4  # um
 fiber_matrix = modes_eig.getPropagationMatrix(fiber_length)
 
 
-emulator = ImgEmulator(2 * areaSize * 1e-4, 2 * npoints,
+emulator = ImgEmulator(2 * area_size * 1e-4, 2 * npoints,
                        wl * 1e-4, imgs_number=100, init_field_gen=random_round_hole,
                        init_gen_args=((radius - 1) * 1e-4,),
                        iprofiles_gen=generate_beams,
