@@ -5,11 +5,9 @@ Created on Mon Jun  7 17:40:40 2021
 @author: von.gostev
 '''
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, dirname, realpath
 
-import cv2
 import numpy as np
-import numba as nb
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -18,14 +16,15 @@ from scipy.interpolate import UnivariateSpline
 
 import json
 from skimage.transform import downscale_local_mean
+from skimage import io
 
 
 def low_res(img, n):
     return downscale_local_mean(img, (n, n))
 
 
-def crop(x, c):
-    return x[c[2]:c[3], c[0]:c[1]]
+def crop(img, c):
+    return img[c[2]:c[3], c[0]:c[1]]
 
 
 def crop_shape(c):
@@ -40,15 +39,47 @@ class GISettings:
         for attr in settings:
             setattr(self, attr, settings[attr])
 
+        if hasattr(self, 'DIR'):
+            self.settings_path = dirname(path)
+            self.DIR = realpath(join(self.settings_path, self.DIR))
+            self.GSFILE = join(self.settings_path, self.GSFILE)
+
 
 def ImgFinder(settings):
     dir_name = settings.DIR
-    yield from [join(dir_name, f) for f in listdir(dir_name)[:settings.N]
-                if isfile(join(dir_name, f)) and f.endswith(settings.EXT)]
+    return [join(dir_name, f) for f in listdir(dir_name)[:settings.N]
+            if isfile(join(dir_name, f)) and f.endswith(settings.EXT)]
 
 
-n_coh = 1
-m_coh = 1
+def get_diff_img(ref_img, obj_img, settings):
+    if ref_img.shape != obj_img.shape:
+        ny_ref, nx_ref = crop_shape(settings.REF_CROP)
+        ny_obj, nx_obj = crop_shape(settings.OBJ_CROP)
+
+        nx = np.min(nx_ref, nx_obj)
+        ny = np.min(ny_ref, ny_obj)
+        return ref_img[:ny, :nx] - obj_img[:ny, :nx]
+    else:
+        return ref_img - obj_img
+
+
+def get_obj_and_ref_imgs(path, settings):
+    img = io.imread(path, 0)
+
+    ref_img = crop(img, settings.REF_CROP)
+    obj_img = crop(img, settings.OBJ_CROP)
+
+    if settings.BACKET:
+        obj_data = np.sum(obj_img)
+    else:
+        obj_data = obj_img[settings.Y_CORR, settings.X_CORR]
+
+    if settings.DIFF:
+        ref_data = get_diff_img(ref_img, obj_img, settings)
+    else:
+        ref_data = ref_img
+
+    return ref_data, obj_data
 
 
 def data_correlation(obj_data, ref_data):
@@ -68,28 +99,25 @@ class ImgAnalyser:
         '''
 
         self.settings = GISettings(settings_file)
-        print(self.settings)
+        print('Experiment settings:', json.dumps(
+            self.settings.__dict__, indent=4))
 
         self.N = self.settings.N
         self.Ny, self.Nx = crop_shape(self.settings.REF_CROP)
-        print(self.Ny, self.Nx)
+        print(f'Reference images size is {self.Nx}x{self.Ny}')
 
         self.obj_data = np.zeros(self.N)
         self.ref_data = np.zeros((self.N, self.Ny, self.Nx), dtype=np.int16)
-        self.ghost_data = np.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self.gi = np.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         self.sc = np.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.times = np.linspace(
             0, self.settings.TCPOINTS / self.settings.FREQ,
             self.settings.TCPOINTS)
-        self.time_corr = np.zeros(self.settings.TCPOINTS)
+        self.tc = np.ones(self.settings.TCPOINTS)
         self.cd = np.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         self._create_data()
-
-        if len(self.ref_data) == 0:
-            raise IOError(
-                'Не найдено изображений в выбранной папке: %s' % self.settings.DIR)
 
     def _create_data(self):
         '''
@@ -97,42 +125,21 @@ class ImgAnalyser:
         self.obj_data -- изображения объекта
         self.ref_data -- изображения референсного пучка
         '''
-        i = 0
+        imgs_path = ImgFinder(self.settings)
+        if len(imgs_path) == 0:
+            raise IOError(
+                'Не найдено изображений в выбранной папке: %s' % self.settings.DIR)
 
-        for path in ImgFinder(self.settings):
-            img = cv2.imread(path, 0)
+        for i, path in enumerate(imgs_path):
+            self.ref_data[i, :, :], self.obj_data[i] = \
+                get_obj_and_ref_imgs(path, self.settings)
 
-            ref_img = crop(img, self.settings.REF_CROP)
-            obj_img = crop(img, self.settings.OBJ_CROP)
-
-            if not self.settings.DIFF:
-                self.ref_data[i, :, :] = ref_img
-                if self.settings.BACKET:
-                    self.obj_data[i] = np.sum(obj_img)
-                else:
-                    self.obj_data[i] = \
-                        obj_img[self.settings.Y_CORR, self.settings.X_CORR]
-            else:
-                self.ref_data = self._get_diff_data(ref_img, obj_img)
-
-            i += 1
-
-    def _get_diff_data(self, ref_img, obj_img):
-        if not (self.Ny, self.Nx) == crop_shape(self.settings.OBJ_CROP):
-            y2, x2 = crop_shape(self.settings.OBJ_CROP)
-            x = np.min(self.Nx, x2)
-            y = np.min(self.Ny, y2)
-            return ref_img[:y, :x] - obj_img[:y, :x]
-
-        else:
-            return ref_img - obj_img
-
-    def correlate(self):
+    def calculate_ghostimage(self):
         '''
         Расчет корреляции между последовательностью суммарных сигналов в объектном плече
         и поточечными последовательностями сигналов в референсном плече
         '''
-        self.ghost_data = data_correlation(self.obj_data, self.ref_data)
+        self.gi = data_correlation(self.obj_data, self.ref_data)
 
     @property
     def diff(self):
@@ -141,7 +148,7 @@ class ImgAnalyser:
         '''
         return np.mean(self.ref_data, axis=0)
 
-    def spatial_coherence(self, x=0, y=0):
+    def calculate_xycorr(self, x=0, y=0):
         '''
         Расчет функции когерентности или поперечной корреляции
         '''
@@ -152,81 +159,102 @@ class ImgAnalyser:
         point_data = self.ref_data[:, y, x]
         self.sc = data_correlation(point_data, self.ref_data)
 
-    def time_coherence(self):
+    def calculate_timecorr(self, npoints=100):
         def cf1d(data, i):
             return np.nan_to_num(np.corrcoef(data[:-i], data[i:])[0, 1])
 
-        ravel_data = self.ref_data.reshape((self.N, self.Nx * self.Ny))
-        self.time_corr = \
-            np.array([1] +
-                     [np.mean(np.apply_along_axis(cf1d, 0, ravel_data, i))
-                         for i in range(1, self.settings.TCPOINTS)])
+        rdim = self.Nx * self.Ny // 2
+        ravel_data = self.ref_data.reshape((self.N, rdim * 2))
+        ravel_data = ravel_data[:, rdim - npoints // 2: rdim + npoints // 2]
+        self.tc[1:] = np.mean([np.apply_along_axis(cf1d, 1, ravel_data, i)
+                               for i in range(1, self.settings.TCPOINTS)], axis=-1)
+
+    def calculate_contrast(self):
+        self.cd = (self.gi - np.mean(self.gi)) / self.gi
+        self.cd[np.abs(self.cd) > 1] = 0
+
+    def calculate_all(self):
+        self.calculate_ghostimage()
+        self.calculate_contrast()
+        self.calculate_xycorr()
+        self.calculate_timecorr()
+
+    @property
+    def ghost_data(self):
+        return self.gi
+
+    @property
+    def timecorr_data(self):
+        return self.tc
+
+    @property
+    def xycorr_data(self):
+        return self.sc
+
+    @property
+    def contrast_data(self):
+        return self.cd
 
     @property
     def contrast(self):
-        with self.ghost_data as gi:
-            self.cd = (gi - np.mean(gi)) / gi
-        self.cd[np.abs(self.cd) > 1] = 0
         return np.mean(self.cd)
 
     @property
-    def sc_width(self):
+    def xycorr_width(self):
         d = self.sc[self.Ny // 2, :]
         spline = UnivariateSpline(np.arange(self.Nx), d - np.max(d) / 2, s=0)
         r = spline.roots()
-        print(r)
         if not len(r):
             return 0
         return np.abs(r[1] - r[0])
 
     @property
-    def tc_width(self):
-        X, Y = self.tc
+    def timecorr_width(self):
         spline = UnivariateSpline(
-            X, Y - np.max(Y) / 2, s=0)
+            self.times, self.tc - np.max(self.tc) / 2, s=0)
         r = spline.roots()
-        print(r)
         return np.abs(r[0])
 
     @property
     def information(self):
         self.global_settings = GISettings(self.settings.GSFILE)
 
-        with self.settings as sets:
-            self.text_global = [getattr(sets, 'INFO', '') + '\n']
-            with self.global_settings as gsets:
-                self.text_global += [
-                    'Условия проведения эксперимента\n',
-                    'Источник теплового света основан на He-Ne лазере, ' +
-                    'излучение которого проходит через матовый диск, ' +
-                    f'вращающийся с угловой скоростью {sets.DISKV} град/с.',
-                    f'Диаметр лазерного пучка на матовом диске составляет {gsets.BEAMD:.2f} см.',
-                    f'Диск находится на расстоянии {gsets.AL1} см от линзы L1 ' +
-                    f'с фокусным расстоянием {gsets.F1} см, и в сопряженной ' +
-                    f'оптической плоскости на расстоянии {gsets.BL1} см от линзы ' +
-                    'строится изображение поверхности диска.',
-                    'Это изображение передается в объектную плоскость системы линзой L2 ' +
-                    f'с фокусным расстоянием {gsets.F2} см, ' +
-                    'стоящей в {gsets.AL2} см от диска и в {gsets.BL2} см от объекта.',
-                    'В объектном плече стоит линза L3 с фокусным расстоянием {gsets.F3} см в {gsets.AL3} см ' +
-                    f'от объекта и в {gsets.BL3} см от CCD-камеры',
-                    'В опорном плече плоскость, идентичная объектной передается на CCD-камеру ' +
-                    f'линзой L4 с фокусным расстоянием {gsets.F4} см, ' +
-                    'расположенной в {gsets.AL4} см от передаваемой плоскости и в {gsets.BL4} см от CCD-камеры']
-            self.text_ccd = [
-                'CCD-камера работает в режиме программного запуска с выдержкой {sets.EXCERT} мс ' +
-                f'и усилением {sets.AMPL}',
-                f'Частота съемки составляет {sets.FREQ} Гц.',
-                'Область регистрации объектного пучка составляет {0:d} на {1:d} точек'.format(
-                    *crop_shape(sets.OBJ_CROP)),
-                f'Область регистрации опорного пучка составляет {self.Nx:d} на {self.Ny:d} точек',
-                f'Всего обрабатывается {self.N:d} изображений.']
+        sets = self.settings
+        gsets = self.global_settings
+
+        self.text_global = [getattr(sets, 'INFO', '') + '\n']
+        self.text_global += [
+            'Условия проведения эксперимента\n',
+            'Источник теплового света основан на He-Ne лазере, ' +
+            'излучение которого проходит через матовый диск, ' +
+            f'вращающийся с угловой скоростью {gsets.DISKV} град/с.',
+            f'Диаметр лазерного пучка на матовом диске составляет {gsets.BEAMD:.2f} см.',
+            f'Диск находится на расстоянии {gsets.AL1} см от линзы L1 ' +
+            f'с фокусным расстоянием {gsets.F1} см, и в сопряженной ' +
+            f'оптической плоскости на расстоянии {gsets.BL1} см от линзы ' +
+            'строится изображение поверхности диска.',
+            'Это изображение передается в объектную плоскость системы линзой L2 ' +
+            f'с фокусным расстоянием {gsets.F2} см, ' +
+            f'стоящей в {gsets.AL2} см от диска и в {gsets.BL2} см от объекта.',
+            f'В объектном плече стоит линза L3 с фокусным расстоянием {gsets.F3} см в {gsets.AL3} см ' +
+            f'от объекта и в {gsets.BL3} см от CCD-камеры',
+            'В опорном плече плоскость, идентичная объектной передается на CCD-камеру ' +
+            f'линзой L4 с фокусным расстоянием {gsets.F4} см, ' +
+            f'расположенной в {gsets.AL4} см от передаваемой плоскости и в {gsets.BL4} см от CCD-камеры']
+        self.text_ccd = [
+            f'CCD-камера работает в режиме программного запуска с выдержкой {sets.EXCERT} мс ' +
+            f'и усилением {sets.AMPL}',
+            f'Частота съемки составляет {sets.FREQ} Гц.',
+            'Область регистрации объектного пучка составляет {0:d} на {1:d} точек'.format(
+                *crop_shape(sets.OBJ_CROP)),
+            f'Область регистрации опорного пучка составляет {self.Nx:d} на {self.Ny:d} точек',
+            f'Всего обрабатывается {self.N:d} изображений.']
         self.text_cf = [
-            f'Ширина пространственной автокорреляционной функции в опорном пучке составляет {self.sc_width:f} точек',
-            f'Ширина временной корреляционной функции в опорном пучке составляет {self.tc_width:f} c.']
+            f'Ширина пространственной автокорреляционной функции в опорном пучке составляет {self.xycorr_width:f} точек',
+            f'Ширина временной корреляционной функции в опорном пучке составляет {self.timecorr_width:f} c.']
         self.text_gi = [
             f'Средняя контрастность фантомного изображения составляет {self.contrast:.2%}',
-            f'Видность фантомного изображения составляет {np.mean(self.ghost_data) / np.max(self.ghost_data):.2%}']
+            f'Видность фантомного изображения составляет {np.mean(self.gi) / np.max(self.gi):.2%}']
 
         return self.text_global + self.text_ccd + self.text_cf + self.text_gi
 
@@ -237,13 +265,13 @@ class ImgAnalyser:
     def save_pictures(self, img_ext='png', thresh_mean=False):
         # np.mean(self.ref_data)*np.mean(self.obj_data)
         if thresh_mean:
-            noise = np.mean(self.ghost_data)
-            self.ghost_data[np.where(self.ghost_data <= noise)] = 0
+            noise = np.mean(self.gi)
+            self.gi[np.where(self.gi <= noise)] = 0
 
         img_dir = self.settings.DIR
         plt.imsave(
             join(img_dir, f'gi{self.N}.{img_ext}'),
-            self.ghost_data, format=img_ext, dpi=150)
+            self.gi, format=img_ext, dpi=150)
         plt.imsave(
             join(img_dir, f'sc{self.N}.{img_ext}'),
             self.sc, format=img_ext, dpi=150)
@@ -258,12 +286,6 @@ class ImgAnalyser:
                     format=img_ext, dpi=150)
 
         plt.figure()
-        # plt.xticks(fontsize=21)
-        # plt.yticks(fontsize=21)
-        # ax = plt.subplot(111)
-        # ax.set_xlabel('Номер пикселя', fontsize=21)
-        # ax.set_ylabel(r'Нормированная корреляционная функция', fontsize=21)
-
         plt.plot(np.arange(1, self.Ny + 1), self.sc[:, self.Nx // 2])
         plt.savefig(join(img_dir, f'sc{self.N}.{img_ext}'),
                     format=img_ext, dpi=150)
@@ -273,12 +295,12 @@ class ImgViewer:
 
     def __init__(self, init):
         '''
-        Инициализация изображения по пути к изображению 
+        Инициализация изображения по пути к изображению
             или принятому массиву пикселей numpy.ndarray
         '''
         if type(init) == str:
             self.path = init
-            self.data = [cv2.imread(self.path, 0)]
+            self.data = [io.imread(self.path, 0)]
         elif type(init) == np.ndarray:
             self.path = 'generated_img'
             self.data = [np.abs(init)]
@@ -315,4 +337,4 @@ class ImgViewer:
             plt.figure()
             plt.imshow(d)
             plt.colorbar()
-        plt.show()
+            plt.show()
