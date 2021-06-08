@@ -10,7 +10,7 @@ from gi.experiment import ImgAnalyser, ImgViewer
 """
 settings_file -- путь к файлу с настройками эксперимента в формате json
 """
-settings_file = settings_file = r'H:\Documents\Научная работа\В РАБОТЕ\Поляризационные ФИ\Ghost Images Software\04_04_ghost_2.txt'
+settings_file = settings_file = r'H:\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
 
 
 analyser = ImgAnalyser(settings_file)

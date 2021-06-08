@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Jun  5 16:47:15 2021
+Created on Tue Jun  8 18:34:32 2021
 
 @author: vonGostev
 """
@@ -9,7 +9,7 @@ import pyMMF
 import numpy as np
 import matplotlib.pyplot as plt
 
-from lightprop2d import Beam2D, gaussian_beam, round_hole, random_round_hole
+from lightprop2d import Beam2D, random_round_hole, square_hole
 from gi import ImgEmulator
 
 # Parameters
@@ -21,27 +21,7 @@ wl = 0.6328  # wavelength in microns
 # calculate the field on an area larger than the diameter of the fiber
 area_size = 3.5*radius
 npoints = 2**7  # resolution of the window
-
-
-def plot_i(ibeam):
-    area_size = ibeam.area_size
-    plt.imshow(ibeam.iprofile,
-               extent=[-area_size / 2e-4, area_size / 2e-4] * 2)
-    plt.xlabel(r'x, $\mu m$')
-    plt.ylabel(r'y, $\mu m$')
-    plt.colorbar()
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_modes(modes_coeffs):
-    plt.plot(np.real(modes_coeffs))
-    plt.plot(np.imag(modes_coeffs))
-    plt.xlabel('Mode number')
-    plt.ylabel('Coefficient')
-    plt.title('Modes series before the fiber')
-    plt.tight_layout()
-    plt.show()
+fiber_length = 50e4  # um
 
 
 def generate_beams(area_size, npoints, wl,
@@ -87,22 +67,20 @@ modes_eig = solver.solve(nmodesMax=500, boundary='close',
                          mode='eig', curvature=None, propag_only=True)
 modes_list = np.array(modes_eig.profiles)[np.argsort(modes_eig.betas)[::-1]]
 
-fiber_length = 50e4  # um
 fiber_matrix = modes_eig.getPropagationMatrix(fiber_length)
 
-fig, axes = plt.subplots(4, 9, figsize=(20, 10))
-for i, ax in enumerate(np.ravel(axes)):
-    ax.imshow(np.abs(modes_list[i]).reshape((npoints, npoints)))
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
+emulator = ImgEmulator(2 * area_size * 1e-4, 2 * npoints,
+                       wl * 1e-4, imgs_number=100, init_field_gen=random_round_hole,
+                       init_gen_args=((radius - 1) * 1e-4,),
+                       iprofiles_gen=generate_beams,
+                       iprofiles_gen_args=(modes_list, fiber_matrix),
+                       object_gen=square_hole,
+                       object_gen_args=((radius - 5) * 1e-4,))
+emulator.calculate_ghostimage()
+emulator.calculate_xycorr()
+
+plt.imshow(emulator.ghost_data)
 plt.show()
-# emulator = ImgEmulator(2 * area_size * 1e-4, 2 * npoints,
-#                        wl * 1e-4, imgs_number=100, init_field_gen=random_round_hole,
-#                        init_gen_args=((radius - 1) * 1e-4,),
-#                        iprofiles_gen=generate_beams,
-#                        iprofiles_gen_args=(modes_eig.profiles, fiber_matrix))
-# emulator.spatial_coherence()
-# plt.plot(emulator.ghost_data[npoints])
-# plt.show()
+
+plt.imshow(emulator.xycorr_data)
+plt.show()

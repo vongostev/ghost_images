@@ -94,17 +94,17 @@ class ImgEmulator:
 
         self.obj_data /= np.max(self.obj_data)
 
-    def correlate(self):
+    def calculate_ghostimage(self):
         """
         Расчет корреляции между последовательностью суммарных сигналов в объектном плече
         и поточечными последовательностями сигналов в референсном плече
         """
         self.ghost_data = data_correlation(self.obj_data, self.ref_data)
 
-    def spatial_coherence(self):
+    def calculate_xycorr(self):
         """
         Расчет функции когерентности или поперечной корреляции
         """
         central_point_data = \
             self.ref_data[:, self.npoints // 2, self.npoints // 2]
-        self.ghost_data = data_correlation(central_point_data, self.ref_data)
+        self.xycorr_data = data_correlation(central_point_data, self.ref_data)
