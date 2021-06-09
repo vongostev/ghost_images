@@ -44,30 +44,6 @@ def plot_modes(modes_coeffs):
     plt.show()
 
 
-def generate_beams(area_size, npoints, wl,
-                   init_field, init_field_gen, init_gen_args,
-                   object_gen, object_gen_args,
-                   z_obj, z_ref,
-                   modes_profiles, fiber_matrix):
-
-    obj = Beam2D(area_size, npoints, wl,
-                 init_field=init_field,
-                 init_field_gen=init_field_gen,
-                 init_gen_args=init_gen_args)
-    if object_gen is not None:
-        obj.coordinate_filter(
-            lambda x, y: object_gen(x, y, *object_gen_args))
-    modes_coeffs = obj.deconstruct_by_modes(modes_profiles)
-    obj.construct_by_modes(modes_profiles, fiber_matrix @ modes_coeffs)
-
-    ref = Beam2D(area_size, npoints, wl, init_field=obj.xyfprofile)
-
-    obj.propagate(z_obj)
-    ref.propagate(z_ref)
-
-    return ref.iprofile, obj.iprofile
-
-
 # Create the fiber object
 profile = pyMMF.IndexProfile(npoints=npoints, areaSize=area_size)
 # Initialize the index profile
@@ -82,13 +58,14 @@ solver.setWL(wl)
 # Estimate the number of modes for a graded index fiber
 Nmodes_estim = pyMMF.estimateNumModesSI(wl, radius, NA, pola=1)
 
-# modes_semianalytical = solver.solve(mode='SI', curvature=None)
-modes_eig = solver.solve(nmodesMax=500, boundary='close',
-                         mode='eig', curvature=None, propag_only=True)
-modes_list = np.array(modes_eig.profiles)[np.argsort(modes_eig.betas)[::-1]]
+modes_semianalytical = solver.solve(mode='SI', curvature=None)
+# modes_eig = solver.solve(nmodesMax=501, boundary='close',
+#                          mode='eig', curvature=None, propag_only=True)
+modes_list = np.array(modes_semianalytical.profiles)[
+    np.argsort(modes_semianalytical.betas)[::-1]]
 
 fiber_length = 50e4  # um
-fiber_matrix = modes_eig.getPropagationMatrix(fiber_length)
+fiber_matrix = modes_semianalytical.getPropagationMatrix(fiber_length)
 
 fig, axes = plt.subplots(4, 9, figsize=(20, 10))
 for i, ax in enumerate(np.ravel(axes)):
@@ -98,11 +75,3 @@ for i, ax in enumerate(np.ravel(axes)):
     ax.set_xticklabels([])
     ax.set_yticklabels([])
 plt.show()
-# emulator = ImgEmulator(2 * area_size * 1e-4, 2 * npoints,
-#                        wl * 1e-4, imgs_number=100, init_field_gen=random_round_hole,
-#                        init_gen_args=((radius - 1) * 1e-4,),
-#                        iprofiles_gen=generate_beams,
-#                        iprofiles_gen_args=(modes_eig.profiles, fiber_matrix))
-# emulator.spatial_coherence()
-# plt.plot(emulator.ghost_data[npoints])
-# plt.show()

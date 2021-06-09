@@ -5,6 +5,7 @@ Created on Mon Jun  7 18:12:13 2021
 @author: vonGostev
 """
 from dataclasses import dataclass
+from joblib import Parallel, delayed
 import numpy as np
 
 from lightprop2d import Beam2D
@@ -19,15 +20,31 @@ def generate_beams(area_size, npoints, wl,
                  init_field=init_field,
                  init_field_gen=init_field_gen,
                  init_gen_args=init_gen_args)
+    ref = Beam2D(area_size, npoints, wl, init_field=obj.xyprofile)
+
     if object_gen is not None:
         obj.coordinate_filter(
             lambda x, y: object_gen(x, y, *object_gen_args))
-    obj.propagate(z_obj)
 
-    ref = Beam2D(area_size, npoints, wl, init_field=obj.xyprofile)
+    obj.propagate(z_obj)
     ref.propagate(z_ref)
 
     return ref.iprofile, obj.iprofile
+
+
+def generate_data(self, i):
+    ref_img, obj_img = \
+        self.iprofiles_gen(self.area_size, self.npoints, self.wl,
+                           self.init_field, self.init_field_gen, self.init_gen_args,
+                           self.object_gen, self.object_gen_args,
+                           self.z_obj, self.z_ref,
+                           *self.iprofiles_gen_args)
+    if self.use_backet:
+        obj_data = np.sum(obj_img)
+    else:
+        obj_data = \
+            obj_img[self.npoints // 2, self.npoints // 2]
+    return ref_img, obj_data
 
 
 def data_correlation(obj_data, ref_data):
@@ -77,21 +94,25 @@ class ImgEmulator:
         self.obj_data -- изображения объекта
         self.ref_data -- изображения референсного пучка
         """
+        # for i in range(self.imgs_number):
+        #     ref_img, obj_img = \
+        #         self.iprofiles_gen(self.area_size, self.npoints, self.wl,
+        #                            self.init_field, self.init_field_gen, self.init_gen_args,
+        #                            self.object_gen, self.object_gen_args,
+        #                            self.z_obj, self.z_ref,
+        #                            *self.iprofiles_gen_args)
+        #     if self.use_backet:
+        #         self.obj_data[i] = np.sum(obj_img)
+        #     else:
+        #         self.obj_data[i] = \
+        #             obj_img[self.npoints // 2, self.npoints // 2]
+
+        #     self.ref_data[i, :, :] = ref_img
+        raw_data = Parallel(n_jobs=-2)(delayed(generate_data)(self, i)
+                                       for i in range(self.imgs_number))
         for i in range(self.imgs_number):
-            ref_img, obj_img = \
-                self.iprofiles_gen(self.area_size, self.npoints, self.wl,
-                                   self.init_field, self.init_field_gen, self.init_gen_args,
-                                   self.object_gen, self.object_gen_args,
-                                   self.z_obj, self.z_ref,
-                                   *self.iprofiles_gen_args)
-            if self.use_backet:
-                self.obj_data[i] = np.sum(obj_img)
-            else:
-                self.obj_data[i] = \
-                    obj_img[self.npoints // 2, self.npoints // 2]
-
-            self.ref_data[i, :, :] = ref_img
-
+            self.ref_data[i, :, :] = raw_data[i][0]
+            self.obj_data[i] = raw_data[i][1]
         self.obj_data /= np.max(self.obj_data)
 
     def calculate_ghostimage(self):

@@ -9,7 +9,7 @@ import pyMMF
 import numpy as np
 import matplotlib.pyplot as plt
 
-from lightprop2d import Beam2D, random_round_hole, square_hole
+from lightprop2d import Beam2D, random_round_hole, rectangle_hole
 from gi import ImgEmulator
 
 # Parameters
@@ -24,6 +24,13 @@ npoints = 2**7  # resolution of the window
 fiber_length = 50e4  # um
 
 
+def imshow(arr):
+    plt.imshow(arr, extent=[-area_size / 2, area_size / 2] * 2)
+    plt.xlabel(r'x, $\mu m$')
+    plt.ylabel(r'y, $\mu m$')
+    plt.show()
+
+
 def generate_beams(area_size, npoints, wl,
                    init_field, init_field_gen, init_gen_args,
                    object_gen, object_gen_args,
@@ -34,9 +41,7 @@ def generate_beams(area_size, npoints, wl,
                  init_field=init_field,
                  init_field_gen=init_field_gen,
                  init_gen_args=init_gen_args)
-    if object_gen is not None:
-        obj.coordinate_filter(
-            lambda x, y: object_gen(x, y, *object_gen_args))
+
     modes_coeffs = obj.deconstruct_by_modes(modes_profiles)
     obj.construct_by_modes(modes_profiles, fiber_matrix @ modes_coeffs)
 
@@ -44,6 +49,10 @@ def generate_beams(area_size, npoints, wl,
 
     obj.propagate(z_obj)
     ref.propagate(z_ref)
+
+    if object_gen is not None:
+        obj.coordinate_filter(
+            lambda x, y: object_gen(x, y, *object_gen_args))
 
     return ref.iprofile, obj.iprofile
 
@@ -62,25 +71,23 @@ solver.setWL(wl)
 # Estimate the number of modes for a graded index fiber
 Nmodes_estim = pyMMF.estimateNumModesSI(wl, radius, NA, pola=1)
 
-# modes_semianalytical = solver.solve(mode='SI', curvature=None)
-modes_eig = solver.solve(nmodesMax=500, boundary='close',
-                         mode='eig', curvature=None, propag_only=True)
-modes_list = np.array(modes_eig.profiles)[np.argsort(modes_eig.betas)[::-1]]
+modes_semianalytical = solver.solve(mode='SI', curvature=None)
+# modes_eig = solver.solve(nmodesMax=500, boundary='close',
+#                          mode='eig', curvature=None, propag_only=True)
+modes_list = np.array(modes_semianalytical.profiles)[
+    np.argsort(modes_semianalytical.betas)[::-1]]
 
-fiber_matrix = modes_eig.getPropagationMatrix(fiber_length)
+fiber_matrix = modes_semianalytical.getPropagationMatrix(fiber_length)
 
-emulator = ImgEmulator(2 * area_size * 1e-4, 2 * npoints,
-                       wl * 1e-4, imgs_number=100, init_field_gen=random_round_hole,
+emulator = ImgEmulator(area_size * 1e-4, npoints,
+                       wl * 1e-4, imgs_number=1000, init_field_gen=random_round_hole,
                        init_gen_args=((radius - 1) * 1e-4,),
                        iprofiles_gen=generate_beams,
                        iprofiles_gen_args=(modes_list, fiber_matrix),
-                       object_gen=square_hole,
-                       object_gen_args=((radius - 5) * 1e-4,))
+                       object_gen=rectangle_hole,
+                       object_gen_args=(10e-4, 50e-4))
 emulator.calculate_ghostimage()
 emulator.calculate_xycorr()
 
-plt.imshow(emulator.ghost_data)
-plt.show()
-
-plt.imshow(emulator.xycorr_data)
-plt.show()
+imshow(emulator.ghost_data)
+imshow(emulator.xycorr_data)
