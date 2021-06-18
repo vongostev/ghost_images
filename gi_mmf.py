@@ -9,7 +9,7 @@ import pyMMF
 import numpy as np
 import matplotlib.pyplot as plt
 
-from lightprop2d import Beam2D, random_round_hole, rectangle_hole
+from lightprop2d import Beam2D, random_round_hole, rectangle_hole, round_hole
 from gi import ImgEmulator
 
 # Parameters
@@ -35,14 +35,15 @@ def generate_beams(area_size, npoints, wl,
                    init_field, init_field_gen, init_gen_args,
                    object_gen, object_gen_args,
                    z_obj, z_ref,
-                   modes_profiles, fiber_matrix):
+                   modes_profiles, modes_matrix_t, modes_matrix_dot_t, fiber_matrix):
 
     obj = Beam2D(area_size, npoints, wl,
                  init_field=init_field,
                  init_field_gen=init_field_gen,
                  init_gen_args=init_gen_args)
 
-    modes_coeffs = obj.deconstruct_by_modes(modes_profiles)
+    modes_coeffs = obj.fast_deconstruct_by_modes(
+        modes_matrix_t, modes_matrix_dot_t)
     obj.construct_by_modes(modes_profiles, fiber_matrix @ modes_coeffs)
 
     ref = Beam2D(area_size, npoints, wl, init_field=obj.xyfprofile)
@@ -78,16 +79,28 @@ modes_list = np.array(modes_semianalytical.profiles)[
     np.argsort(modes_semianalytical.betas)[::-1]]
 
 fiber_matrix = modes_semianalytical.getPropagationMatrix(fiber_length)
-
+modes_matrix = np.vstack(modes_list).T
+modes_matrix_t = modes_matrix.T
+modes_matrix_dot_t = modes_matrix.T.dot(modes_matrix)
 emulator = ImgEmulator(area_size * 1e-4, npoints,
-                       wl * 1e-4, imgs_number=1000, init_field_gen=random_round_hole,
+                       wl * 1e-4, imgs_number=10000, init_field_gen=random_round_hole,
                        init_gen_args=((radius - 1) * 1e-4,),
                        iprofiles_gen=generate_beams,
-                       iprofiles_gen_args=(modes_list, fiber_matrix),
+                       iprofiles_gen_args=(
+                           modes_list, modes_matrix_t, modes_matrix_dot_t, fiber_matrix),
                        object_gen=rectangle_hole,
-                       object_gen_args=(10e-4, 50e-4))
+                       object_gen_args=(10e-4, 50e-4)
+                       )
 emulator.calculate_ghostimage()
 emulator.calculate_xycorr()
 
+ibeam = Beam2D(area_size * 1e-4, npoints,
+               wl * 1e-4, init_field_gen=round_hole,
+               init_gen_args=((radius - 1) * 1e-4,))
+gi = emulator.ghost_data[:, :]
+gi[gi < 0] = 0
+gi[ibeam.iprofile == 0] = 0
+
+imshow(gi)
 imshow(emulator.ghost_data)
 imshow(emulator.xycorr_data)

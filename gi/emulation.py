@@ -110,9 +110,11 @@ class ImgEmulator:
         #     self.ref_data[i, :, :] = ref_img
         raw_data = Parallel(n_jobs=-2)(delayed(generate_data)(self, i)
                                        for i in range(self.imgs_number))
+
         for i in range(self.imgs_number):
             self.ref_data[i, :, :] = raw_data[i][0]
             self.obj_data[i] = raw_data[i][1]
+
         self.obj_data /= np.max(self.obj_data)
 
     def calculate_ghostimage(self):
