@@ -9,12 +9,9 @@ import pyMMF
 import numpy as np
 import matplotlib.pyplot as plt
 
-from lightprop2d import Beam2D, gaussian_beam, round_hole, random_round_hole
-from gi import ImgEmulator
-
 # Parameters
 NA = 0.27
-radius = 25  # in microns
+radius = 10  # in microns
 n1 = 1.45
 wl = 0.6328  # wavelength in microns
 
@@ -61,17 +58,17 @@ Nmodes_estim = pyMMF.estimateNumModesSI(wl, radius, NA, pola=1)
 modes_semianalytical = solver.solve(mode='SI', curvature=None)
 # modes_eig = solver.solve(nmodesMax=501, boundary='close',
 #                          mode='eig', curvature=None, propag_only=True)
-modes_list = np.array(modes_semianalytical.profiles)[
+modes_list2 = np.array(modes_semianalytical.profiles)[
     np.argsort(modes_semianalytical.betas)[::-1]]
 
-fiber_length = 50e4  # um
-fiber_matrix = modes_semianalytical.getPropagationMatrix(fiber_length)
+# fiber_length = 50e4  # um
+# fiber_matrix = modes_semianalytical.getPropagationMatrix(fiber_length)
 
-fig, axes = plt.subplots(4, 9, figsize=(20, 10))
-for i, ax in enumerate(np.ravel(axes)):
-    ax.imshow(np.abs(modes_list[i]).reshape((npoints, npoints)))
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-plt.show()
+# fig, axes = plt.subplots(4, 9, figsize=(20, 10))
+# for i, ax in enumerate(np.ravel(axes)):
+#     ax.imshow(np.abs(modes_list[i]).reshape((npoints, npoints)))
+#     ax.set_xticks([])
+#     ax.set_yticks([])
+#     ax.set_xticklabels([])
+#     ax.set_yticklabels([])
+# plt.show()

@@ -7,20 +7,21 @@ Created on Tue Jun  8 18:34:32 2021
 import __init__
 import pyMMF
 import numpy as np
+import cupy as cp
 import matplotlib.pyplot as plt
 
 from lightprop2d import Beam2D, random_round_hole, rectangle_hole, round_hole
-from gi import ImgEmulator
+from gi import IEC, IEG
 
 # Parameters
 NA = 0.27
-radius = 25  # in microns
+radius = 10  # in microns
 n1 = 1.45
 wl = 0.6328  # wavelength in microns
 
 # calculate the field on an area larger than the diameter of the fiber
-area_size = 3.5*radius
-npoints = 2**7  # resolution of the window
+area_size = 4.5*radius
+npoints = 2**9  # resolution of the window
 fiber_length = 50e4  # um
 
 
@@ -35,25 +36,24 @@ def generate_beams(area_size, npoints, wl,
                    init_field, init_field_gen, init_gen_args,
                    object_gen, object_gen_args,
                    z_obj, z_ref,
-                   modes_profiles, modes_matrix_t, modes_matrix_dot_t, fiber_matrix):
+                   modes_profiles, modes_matrix_t, modes_matrix_dot_t, fiber_matrix, ug):
 
     obj = Beam2D(area_size, npoints, wl,
                  init_field=init_field,
                  init_field_gen=init_field_gen,
-                 init_gen_args=init_gen_args)
+                 init_gen_args=init_gen_args, use_gpu=ug)
 
     modes_coeffs = obj.fast_deconstruct_by_modes(
         modes_matrix_t, modes_matrix_dot_t)
     obj.construct_by_modes(modes_profiles, fiber_matrix @ modes_coeffs)
 
-    ref = Beam2D(area_size, npoints, wl, init_field=obj.xyfprofile)
+    ref = Beam2D(area_size, npoints, wl, init_field=obj.xyfprofile, use_gpu=ug)
 
     obj.propagate(z_obj)
     ref.propagate(z_ref)
 
     if object_gen is not None:
-        obj.coordinate_filter(
-            lambda x, y: object_gen(x, y, *object_gen_args))
+        obj.coordinate_filter(object_gen, object_gen_args)
 
     return ref.iprofile, obj.iprofile
 
@@ -78,29 +78,31 @@ modes_semianalytical = solver.solve(mode='SI', curvature=None)
 modes_list = np.array(modes_semianalytical.profiles)[
     np.argsort(modes_semianalytical.betas)[::-1]]
 
-fiber_matrix = modes_semianalytical.getPropagationMatrix(fiber_length)
-modes_matrix = np.vstack(modes_list).T
+xp = np
+fiber_matrix = xp.array(
+    modes_semianalytical.getPropagationMatrix(fiber_length))
+modes_matrix = xp.array(np.vstack(modes_list).T)
 modes_matrix_t = modes_matrix.T
 modes_matrix_dot_t = modes_matrix.T.dot(modes_matrix)
-emulator = ImgEmulator(area_size * 1e-4, npoints,
-                       wl * 1e-4, imgs_number=10000, init_field_gen=random_round_hole,
-                       init_gen_args=((radius - 1) * 1e-4,),
-                       iprofiles_gen=generate_beams,
-                       iprofiles_gen_args=(
-                           modes_list, modes_matrix_t, modes_matrix_dot_t, fiber_matrix),
-                       object_gen=rectangle_hole,
-                       object_gen_args=(10e-4, 50e-4)
-                       )
+emulator = IEC(area_size * 1e-4, npoints,
+               wl * 1e-4, imgs_number=100, init_field_gen=random_round_hole,
+               init_gen_args=((radius - 1) * 1e-4,),
+               iprofiles_gen=generate_beams,
+               iprofiles_gen_args=(
+                   modes_list, modes_matrix_t, modes_matrix_dot_t, fiber_matrix, 0),
+               object_gen=rectangle_hole,
+               object_gen_args=(10e-4, 50e-4)
+               )
 emulator.calculate_ghostimage()
 emulator.calculate_xycorr()
 
-ibeam = Beam2D(area_size * 1e-4, npoints,
-               wl * 1e-4, init_field_gen=round_hole,
-               init_gen_args=((radius - 1) * 1e-4,))
-gi = emulator.ghost_data[:, :]
-gi[gi < 0] = 0
-gi[ibeam.iprofile == 0] = 0
+# ibeam = Beam2D(area_size * 1e-4, npoints,
+#                wl * 1e-4, init_field_gen=round_hole,
+#                init_gen_args=((radius - 1) * 1e-4,), use_gpu=1)
+# gi = emulator.ghost_data[:, :].get()
+# gi[gi < 0] = 0
+# gi[ibeam.iprofile == 0] = 0
 
-imshow(gi)
-imshow(emulator.ghost_data)
-imshow(emulator.xycorr_data)
+# imshow(gi)
+# imshow(emulator.ghost_data.get())
+# imshow(emulator.xycorr_data.get())

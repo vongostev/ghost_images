@@ -94,20 +94,6 @@ class ImgEmulator:
         self.obj_data -- изображения объекта
         self.ref_data -- изображения референсного пучка
         """
-        # for i in range(self.imgs_number):
-        #     ref_img, obj_img = \
-        #         self.iprofiles_gen(self.area_size, self.npoints, self.wl,
-        #                            self.init_field, self.init_field_gen, self.init_gen_args,
-        #                            self.object_gen, self.object_gen_args,
-        #                            self.z_obj, self.z_ref,
-        #                            *self.iprofiles_gen_args)
-        #     if self.use_backet:
-        #         self.obj_data[i] = np.sum(obj_img)
-        #     else:
-        #         self.obj_data[i] = \
-        #             obj_img[self.npoints // 2, self.npoints // 2]
-
-        #     self.ref_data[i, :, :] = ref_img
         raw_data = Parallel(n_jobs=-2)(delayed(generate_data)(self, i)
                                        for i in range(self.imgs_number))
 
