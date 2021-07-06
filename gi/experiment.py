@@ -18,6 +18,8 @@ import json
 from skimage.transform import downscale_local_mean
 from skimage import io
 
+from joblib import Parallel, delayed
+
 
 def low_res(img, n):
     return downscale_local_mean(img, (n, n))
@@ -88,17 +90,38 @@ def data_correlation(obj_data, ref_data):
     return np.apply_along_axis(gi, 0, ref_data)
 
 
+def FWHM(n, data1d):
+    npeak = np.argmax(data1d)
+    spline = UnivariateSpline(np.arange(n), data1d - np.max(data1d) / 2, s=0)
+    r = spline.roots()
+    if len(r) > 1:
+        return abs(r[1] - r[0])
+    elif len(r) == 1:
+        return 2 * abs(r[0] - npeak)
+    return 0
+
+
+def xycorr_width(sc):
+    ny, nx = sc.shape
+    ypeak, xpeak = np.unravel_index(np.argmax(sc), sc.shape)
+    xslice = sc[ypeak, :]
+    yslice = sc[:, xpeak]
+    return FWHM(nx, xslice), FWHM(ny, yslice)
+
+
 class ImgAnalyser:
 
-    def __init__(self, settings_file):
+    def __init__(self, settings_file, n_images=0):
         '''
         ARGUMENTS
         ---------
 
         settings_file -- путь к файлу с настройками эксперимента в формате json
         '''
-
         self.settings = GISettings(settings_file)
+        if n_images:
+            self.settings.N = n_images
+
         print('Experiment settings:', json.dumps(
             self.settings.__dict__, indent=4))
 
@@ -159,6 +182,45 @@ class ImgAnalyser:
         point_data = self.ref_data[:, y, x]
         self.sc = data_correlation(point_data, self.ref_data)
 
+    def calculate_xycorr_widths(self, window_points: int = 50, nx: int = 10, ny: int = 10):
+        """
+        Расчет ширин функции когерентности или поперечной корреляции для разных пикселей
+
+
+        Parameters
+        ----------
+        window_points : int, optional
+            Width of the calculation window (in points) for the each point of calculation. The default is 50.
+        nx : int, optional
+            Number of points in x dimention. The default is 10.
+            The centrum is in the centrum of self.ref_data images:
+                self.Nx // 2 - nx // 2 <= x < self.Nx // 2 + nx // 2
+        ny : int, optional
+            Number of points in y dimention. The default is 10.
+            The centrum is in the centrum of self.ref_data images:
+                self.Ny // 2 - ny // 2 <= y < self.Ny // 2 + ny // 2
+
+        """
+
+        X = np.arange(- nx // 2, nx // 2) + self.Nx // 2
+        Y = np.arange(-ny // 2, ny // 2) + self.Ny // 2
+        points = np.array(np.meshgrid(X, Y)).T.reshape(-1, 2)
+        w = window_points
+
+        def xycorr(x, y):
+            lx = max(x - w // 2, 0)
+            ly = max(y - w // 2, 0)
+            tx = min(x + w // 2, self.Nx)
+            ty = min(y + w // 2, self.Ny)
+            point_data = self.ref_data[:, y, x]
+            sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
+            return xycorr_width(sc)
+
+        _rawd = Parallel(n_jobs=-2)(delayed(xycorr)(*p) for p in points)
+        _rawdx = np.array([w[0] for w in _rawd]).reshape((ny, nx))
+        _rawdy = np.array([w[1] for w in _rawd]).reshape((ny, nx))
+        self.sc_widths = (_rawdx, _rawdy)
+
     def calculate_timecorr(self, npoints=100):
         def cf1d(data, i):
             return np.nan_to_num(np.corrcoef(data[:-i], data[i:])[0, 1])
@@ -198,26 +260,18 @@ class ImgAnalyser:
     @property
     def contrast(self):
         return np.mean(self.cd)
-    
+
     @property
     def g2(self):
         return np.mean(self.ref_data ** 2) / np.mean(self.ref_data) ** 2
 
     @property
     def xycorr_width(self):
-        d = self.sc[self.Ny // 2, :]
-        spline = UnivariateSpline(np.arange(self.Nx), d - np.max(d) / 2, s=0)
-        r = spline.roots()
-        if not len(r):
-            return 0
-        return np.abs(r[1] - r[0])
+        return xycorr_width(self.sc)
 
     @property
     def timecorr_width(self):
-        spline = UnivariateSpline(
-            self.times, self.tc - np.max(self.tc) / 2, s=0)
-        r = spline.roots()
-        return np.abs(r[0])
+        return FWHM(len(self.times), self.tc) * self.times[1]
 
     @property
     def information(self):
