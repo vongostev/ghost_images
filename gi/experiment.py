@@ -201,7 +201,7 @@ class ImgAnalyser:
     
     @property
     def g2(self):
-        return np.mean(np.mean(self.ref_data ** 2) / np.mean(self.ref_data) ** 2)
+        return np.mean(self.ref_data ** 2) / np.mean(self.ref_data) ** 2
 
     @property
     def xycorr_width(self):
