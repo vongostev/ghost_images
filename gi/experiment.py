@@ -182,7 +182,8 @@ class ImgAnalyser:
         point_data = self.ref_data[:, y, x]
         self.sc = data_correlation(point_data, self.ref_data)
 
-    def calculate_xycorr_widths(self, window_points: int = 50, nx: int = 10, ny: int = 10):
+    def calculate_xycorr_widths(self, window_points: int = 50, nx: int = 10, ny: int = 10,
+                                n_jobs: int = -2):
         """
         Расчет ширин функции когерентности или поперечной корреляции для разных пикселей
 
@@ -199,6 +200,14 @@ class ImgAnalyser:
             Number of points in y dimention. The default is 10.
             The centrum is in the centrum of self.ref_data images:
                 self.Ny // 2 - ny // 2 <= y < self.Ny // 2 + ny // 2
+        n_jobs: int, optional
+            Number of jobs in parallel calculations.
+            The default is -2.
+                
+        Return
+        ---------
+        
+        Two arrays with xy correlation function widths: by x  and by y.
 
         """
 
@@ -207,7 +216,8 @@ class ImgAnalyser:
         points = np.array(np.meshgrid(X, Y)).T.reshape(-1, 2)
         w = window_points
 
-        def xycorr(x, y):
+        def xycorr(p):
+            x, y = p
             lx = max(x - w // 2, 0)
             ly = max(y - w // 2, 0)
             tx = min(x + w // 2, self.Nx)
@@ -216,7 +226,7 @@ class ImgAnalyser:
             sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
             return xycorr_width(sc)
 
-        _rawd = Parallel(n_jobs=-2)(delayed(xycorr)(*p) for p in points)
+        _rawd = Parallel(n_jobs=n_jobs)(delayed(xycorr)(p) for p in points)
         _rawdx = np.array([w[0] for w in _rawd]).reshape((ny, nx))
         _rawdy = np.array([w[1] for w in _rawd]).reshape((ny, nx))
         self.sc_widths = (_rawdx, _rawdy)
@@ -263,7 +273,7 @@ class ImgAnalyser:
 
     @property
     def g2(self):
-        return np.mean(self.ref_data ** 2) / np.mean(self.ref_data) ** 2
+        return np.mean(self.ref_data ** 2, axis=(0)) / np.mean(self.ref_data, axis=(0)) ** 2
 
     @property
     def xycorr_width(self):

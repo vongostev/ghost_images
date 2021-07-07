@@ -20,7 +20,7 @@ analyser = ImgAnalyser(settings_file, n_images=100)
 # analyser.calculate_contrast()
 analyser.calculate_xycorr()
 # analyser.calculate_timecorr()
-analyser.calculate_xycorr_widths(nx=10, ny=10)
+# analyser.calculate_xycorr_widths(nx=10, ny=10)
 # print(analyser.information)
 
 # viewer = ImgViewer(analyser.ghost_data)
