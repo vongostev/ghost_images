@@ -81,7 +81,7 @@ def get_obj_and_ref_imgs(path, settings):
     else:
         ref_data = ref_img
 
-    return ref_data, obj_data
+    return ref_data.astype(np.uint8), obj_data.astype(np.uint8)
 
 
 def data_correlation(obj_data, ref_data):

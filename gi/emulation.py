@@ -20,7 +20,7 @@ def generate_beams(area_size, npoints, wl,
                  init_field=init_field,
                  init_field_gen=init_field_gen,
                  init_gen_args=init_gen_args)
-    ref = Beam2D(area_size, npoints, wl, init_field=obj.xyprofile)
+    ref = Beam2D(area_size, npoints, wl, init_field=obj.field)
 
     if object_gen is not None:
         obj.coordinate_filter(
@@ -28,8 +28,11 @@ def generate_beams(area_size, npoints, wl,
 
     obj.propagate(z_obj)
     ref.propagate(z_ref)
+    
+    refprofile = (ref.iprofile / np.max(ref.iprofile) * 255).astype(np.uint8)
+    objprofile = (obj.iprofile / np.max(obj.iprofile) * 255).astype(np.uint8)
 
-    return ref.iprofile, obj.iprofile
+    return refprofile, objprofile
 
 
 def generate_data(self, i):
@@ -95,7 +98,7 @@ class ImgEmulator:
         self.ref_data -- изображения референсного пучка
         """
         raw_data = Parallel(n_jobs=-2)(delayed(generate_data)(self, i)
-                                       for i in range(self.imgs_number))
+                                        for i in range(self.imgs_number))
 
         for i in range(self.imgs_number):
             self.ref_data[i, :, :] = raw_data[i][0]
