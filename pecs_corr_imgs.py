@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jun  8 18:34:32 2021
+Created on Sun Sep  5 00:03:40 2021
 
 @author: vonGostev
 """
+
 import __init__
 import pyMMF
 import numpy as np
@@ -17,12 +18,12 @@ from gi import ImgEmulator
 NA = 0.2
 radius = 25  # in microns
 n1 = 1.45
-wl = 0.632 # wavelength in microns
+wl = 0.632  # wavelength in microns
 
 # calculate the field on an area larger than the diameter of the fiber
 area_size = 5*radius
 npoints = 2**8  # resolution of the window
-fiber_length = 50e4 # um
+fiber_length = 50e4  # um
 
 
 def imshow(arr):
@@ -119,3 +120,14 @@ emulator = ImgEmulator(area_size*um, npoints,
 
 emulator.calculate_xycorr()
 corr_after_fiber = emulator.xycorr_data
+
+fig, ax = plt.subplots(1, 2)
+ax[0].imshow(corr_before_fiber, extent=(-62.5,
+             62.5, -62.5, 62.5), cmap=plt.cm.Greys_r)
+ax[0].set_xlabel('x, um')
+ax[0].set_ylabel('y, um')
+ax[1].set_xlabel('x, um')
+ax[1].imshow(corr_after_fiber, extent=(-62.5,
+             62.5, -62.5, 62.5), cmap=plt.cm.Greys_r)
+plt.tight_layout()
+plt.show()

@@ -14,17 +14,17 @@ from lightprop2d import Beam2D
 def generate_beams(area_size, npoints, wl,
                    init_field, init_field_gen, init_gen_args,
                    object_gen, object_gen_args,
-                   z_obj, z_ref):
+                   z_obj, z_ref, use_gpu, *args, **kwargs):
 
     obj = Beam2D(area_size, npoints, wl,
                  init_field=init_field,
                  init_field_gen=init_field_gen,
-                 init_gen_args=init_gen_args)
-    ref = Beam2D(area_size, npoints, wl, init_field=obj.field)
+                 init_gen_args=init_gen_args, use_gpu=use_gpu)
+    ref = Beam2D(area_size, npoints, wl, init_field=obj.field, use_gpu=use_gpu)
 
     if object_gen is not None:
         obj.coordinate_filter(
-            lambda x, y: object_gen(x, y, *object_gen_args))
+            f_gen=lambda x, y: object_gen(x, y, *object_gen_args))
 
     obj.propagate(z_obj)
     ref.propagate(z_ref)
@@ -32,7 +32,10 @@ def generate_beams(area_size, npoints, wl,
     refprofile = (ref.iprofile / np.max(ref.iprofile) * 255).astype(np.uint8)
     objprofile = (obj.iprofile / np.max(obj.iprofile) * 255).astype(np.uint8)
 
-    return refprofile, objprofile
+    if not use_gpu:
+        return refprofile, objprofile
+    else:
+        return refprofile.get(), objprofile.get()
 
 
 def generate_data(self, i):
@@ -41,7 +44,7 @@ def generate_data(self, i):
                            self.init_field, self.init_field_gen, self.init_gen_args,
                            self.object_gen, self.object_gen_args,
                            self.z_obj, self.z_ref,
-                           *self.iprofiles_gen_args)
+                           self.use_gpu, *self.iprofiles_gen_args)
     if self.use_backet:
         obj_data = np.sum(obj_img)
     else:
@@ -79,6 +82,7 @@ class ImgEmulator:
     iprofiles_gen_args: tuple = ()
 
     use_backet: bool = True
+    use_gpu: bool = False
 
     def __post_init__(self):
         """
@@ -97,7 +101,7 @@ class ImgEmulator:
         self.obj_data -- изображения объекта
         self.ref_data -- изображения референсного пучка
         """
-        raw_data = Parallel(n_jobs=-2)(delayed(generate_data)(self, i)
+        raw_data = Parallel(n_jobs=1)(delayed(generate_data)(self, i)
                                         for i in range(self.imgs_number))
 
         for i in range(self.imgs_number):
