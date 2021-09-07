@@ -10,19 +10,19 @@ import numpy as np
 import cupy as cp
 import matplotlib.pyplot as plt
 
-from lightprop2d import Beam2D, random_round_hole, rectangle_hole, round_hole, um
+from lightprop2d import Beam2D, random_round_hole, rectangle_hole, um
 from gi import ImgEmulator
 
 # Parameters
 NA = 0.2
 radius = 25  # in microns
 n1 = 1.45
-wl = 0.632 # wavelength in microns
+wl = 0.632  # wavelength in microns
 
 # calculate the field on an area larger than the diameter of the fiber
 area_size = 5*radius
 npoints = 2**8  # resolution of the window
-fiber_length = 50e4 # um
+fiber_length = 50e4  # um
 
 
 def imshow(arr):
