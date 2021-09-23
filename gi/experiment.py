@@ -194,8 +194,8 @@ class ImgAnalyser:
         point_data = self.ref_data[:, y, x]
         self.sc = data_correlation(point_data, self.ref_data)
 
-    def calculate_xycorr_widths(self, window_points: int = 50, nx: int = 10, ny: int = 10,
-                                n_jobs: int = -2):
+    def calculate_xycorr_widths(self, window_points: int=50, nx: int=10, ny: int=10,
+                                n_jobs: int=-2):
         """
         Расчет ширин функции когерентности или поперечной корреляции для разных пикселей
 
@@ -269,6 +269,10 @@ class ImgAnalyser:
     @property
     def xycorr_data(self):
         return self.sc
+
+    @property
+    def xycorr_widths_data(self):
+        return self.sc_widths
 
     @property
     def contrast_data(self):
