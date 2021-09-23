@@ -119,6 +119,7 @@ def xycorr(self, p, w):
     sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
     return xycorr_width(sc)
 
+
 class ImgAnalyser:
 
     def __init__(self, settings_file, n_images=0):
@@ -214,10 +215,10 @@ class ImgAnalyser:
         n_jobs: int, optional
             Number of jobs in parallel calculations.
             The default is -2.
-                
+
         Return
         ---------
-        
+
         Two arrays with xy correlation function widths: by x  and by y.
 
         """
@@ -227,7 +228,8 @@ class ImgAnalyser:
         points = np.array(np.meshgrid(X, Y)).T.reshape(-1, 2)
         w = window_points
 
-        _rawd = Parallel(n_jobs=n_jobs)(delayed(xycorr)(self, p, w) for p in points)
+        _rawd = Parallel(n_jobs=n_jobs)(
+            delayed(xycorr)(self, p, w) for p in points)
         _rawdx = np.array([w[0] for w in _rawd]).reshape((ny, nx))
         _rawdy = np.array([w[1] for w in _rawd]).reshape((ny, nx))
         self.sc_widths = (_rawdx, _rawdy)
@@ -251,9 +253,10 @@ class ImgAnalyser:
         self.calculate_contrast()
         self.calculate_xycorr()
         self.calculate_timecorr()
-        
-    def g2_intensity(self,noise):
-        self.g2 = np.mean((self.ref_data - noise ) ** 2, axis=(0)) / np.mean((self.ref_data - noise ), axis=(0)) ** 2
+
+    def g2_intensity(self, noise):
+        self.g2 = np.mean((self.ref_data - noise)**2, axis=0) / \
+            np.mean(self.ref_data - noise, axis=0)**2
 
     @property
     def ghost_data(self):

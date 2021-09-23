@@ -28,7 +28,7 @@ def generate_beams(area_size, npoints, wl,
 
     obj.propagate(z_obj)
     ref.propagate(z_ref)
-    
+
     refprofile = (ref.iprofile / np.max(ref.iprofile) * 255).astype(np.uint8)
     objprofile = (obj.iprofile / np.max(obj.iprofile) * 255).astype(np.uint8)
 
@@ -102,7 +102,7 @@ class ImgEmulator:
         self.ref_data -- изображения референсного пучка
         """
         raw_data = Parallel(n_jobs=1)(delayed(generate_data)(self, i)
-                                        for i in range(self.imgs_number))
+                                      for i in range(self.imgs_number))
 
         for i in range(self.imgs_number):
             self.ref_data[i, :, :] = raw_data[i][0]
