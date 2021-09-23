@@ -109,6 +109,16 @@ def xycorr_width(sc):
     return FWHM(nx, xslice), FWHM(ny, yslice)
 
 
+def xycorr(self, p, w):
+    x, y = p
+    lx = max(x - w // 2, 0)
+    ly = max(y - w // 2, 0)
+    tx = min(x + w // 2, self.Nx)
+    ty = min(y + w // 2, self.Ny)
+    point_data = self.ref_data[:, y, x]
+    sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
+    return xycorr_width(sc)
+
 class ImgAnalyser:
 
     def __init__(self, settings_file, n_images=0):
@@ -216,17 +226,7 @@ class ImgAnalyser:
         points = np.array(np.meshgrid(X, Y)).T.reshape(-1, 2)
         w = window_points
 
-        def xycorr(p):
-            x, y = p
-            lx = max(x - w // 2, 0)
-            ly = max(y - w // 2, 0)
-            tx = min(x + w // 2, self.Nx)
-            ty = min(y + w // 2, self.Ny)
-            point_data = self.ref_data[:, y, x]
-            sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
-            return xycorr_width(sc)
-
-        _rawd = Parallel(n_jobs=n_jobs)(delayed(xycorr)(p) for p in points)
+        _rawd = Parallel(n_jobs=n_jobs)(delayed(xycorr)(self, p, w) for p in points)
         _rawdx = np.array([w[0] for w in _rawd]).reshape((ny, nx))
         _rawdy = np.array([w[1] for w in _rawd]).reshape((ny, nx))
         self.sc_widths = (_rawdx, _rawdy)
