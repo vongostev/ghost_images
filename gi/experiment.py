@@ -139,6 +139,7 @@ class ImgAnalyser:
             self.settings.TCPOINTS)
         self.tc = np.ones(self.settings.TCPOINTS)
         self.cd = np.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self.g2 = 0
 
         self._create_data()
 
@@ -250,6 +251,9 @@ class ImgAnalyser:
         self.calculate_contrast()
         self.calculate_xycorr()
         self.calculate_timecorr()
+        
+    def g2_intensity(self,noise):
+        self.g2 = np.mean((self.ref_data - noise ) ** 2, axis=(0)) / np.mean((self.ref_data - noise ), axis=(0)) ** 2
 
     @property
     def ghost_data(self):
@@ -270,10 +274,6 @@ class ImgAnalyser:
     @property
     def contrast(self):
         return np.mean(self.cd)
-
-    @property
-    def g2(self):
-        return np.mean(self.ref_data ** 2, axis=(0)) / np.mean(self.ref_data, axis=(0)) ** 2
 
     @property
     def xycorr_width(self):
