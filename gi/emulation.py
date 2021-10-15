@@ -7,8 +7,10 @@ Created on Mon Jun  7 18:12:13 2021
 from dataclasses import dataclass
 from joblib import Parallel, delayed
 import numpy as np
+from collections import namedtuple
 
 from lightprop2d import Beam2D
+from .experiment import find_images, get_ref_imgnum
 
 
 def generate_beams(area_size, npoints, wl,
@@ -53,6 +55,25 @@ def generate_data(self, i):
     return ref_img, obj_data
 
 
+def generate_data_exp(self, path, crop):
+    _settings = namedtuple('settings', ['REF_CROP'])
+    settings = _settings(REF_CROP=crop)
+    init_field = get_ref_imgnum(path, settings)
+    npoints = init_field.shape[0]
+    ref_img, obj_img = \
+        self.iprofiles_gen(self.area_size, npoints, self.wl,
+                           init_field, None, (),
+                           self.object_gen, self.object_gen_args,
+                           self.z_obj, self.z_ref,
+                           self.use_gpu, *self.iprofiles_gen_args)
+    if self.use_backet:
+        obj_data = np.sum(obj_img)
+    else:
+        obj_data = \
+            obj_img[self.npoints // 2, self.npoints // 2]
+    return ref_img, obj_data
+
+
 def data_correlation(obj_data, ref_data):
     def gi(pixel_data):
         return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]
@@ -83,6 +104,11 @@ class ImgEmulator:
 
     use_backet: bool = True
     use_gpu: bool = False
+    use_expdata: bool = False
+
+    expdata_dir: str = ''
+    expdata_format: str = 'bmp'
+    expdata_crop: list = (150, 360,	70,	280)
 
     def __post_init__(self):
         """
@@ -91,24 +117,32 @@ class ImgEmulator:
 
         """
 
-        self.obj_data = np.zeros(self.imgs_number)
-        self.ref_data = np.empty(
-            (self.imgs_number, self.npoints, self.npoints))
-        self.ghost_data = np.zeros((self.npoints, self.npoints))
+        self.data = np.empty(self.imgs_number,
+                             dtype=[('ref', 'O'), ('obj', '<i4')])
 
         """
         Здесь создается список объектных и референсных изображений
         self.obj_data -- изображения объекта
         self.ref_data -- изображения референсного пучка
         """
-        raw_data = Parallel(n_jobs=1)(delayed(generate_data)(self, i)
-                                      for i in range(self.imgs_number))
+        if self.use_expdata:
+            self.data[:] = Parallel(n_jobs=1)(
+                delayed(generate_data_exp)(self, path, self.expdata_crop)
+                for path in find_images(
+                    self.expdata_dir,
+                    self.imgs_number,
+                    self.expdata_format))
+        else:
+            self.data[:] = Parallel(n_jobs=1)(delayed(generate_data)(self, i)
+                                              for i in range(self.imgs_number))
 
-        for i in range(self.imgs_number):
-            self.ref_data[i, :, :] = raw_data[i][0]
-            self.obj_data[i] = raw_data[i][1]
+        self.obj_data = self.data['obj']
+        self.ref_data = np.stack(self.data['ref'])
+        self.ghost_data = np.zeros_like(self.ref_data[0])
+        self.npoints = self.ghost_data.shape[0]
+        del self.data
 
-        self.obj_data /= np.max(self.obj_data)
+        # self.obj_data /= np.max(self.obj_data)
 
     def calculate_ghostimage(self):
         """

@@ -19,14 +19,18 @@ area_size = 200e-4  # 200 um
 # Wavelength in cm
 wl0 = 632e-7
 
-test = ImgEmulator(area_size, npoints, wl0, 1000,
-                   init_field_gen=random_round_hole,
-                   init_gen_args=(25e-4,),
+# test = ImgEmulator(area_size, npoints, wl0, 1000,
+#                    init_field_gen=random_round_hole,
+#                    init_gen_args=(25e-4,),
+#                    z_ref=500e-4)
+test = ImgEmulator(area_size, npoints, wl0, 100,
+                   expdata_dir=r'H:\SciData\GI\23_05_H_40\23_05_H_40',
+                   use_expdata=True,
                    z_ref=500e-4)
 test.calculate_xycorr()
 
-plt.plot(test.xycorr_data[npoints // 2])
+plt.plot(test.xycorr_data[test.npoints // 2])
 plt.show()
 
-fake_beam = Beam2D(area_size, npoints, wl0, init_field=test.xycorr_data)
+fake_beam = Beam2D(area_size, test.npoints, wl0, init_field=test.xycorr_data)
 print(fake_beam.D4sigma)
