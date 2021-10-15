@@ -21,6 +21,11 @@ from skimage import io
 from joblib import Parallel, delayed
 
 
+IMG_CROP_DATA = 0
+IMG_IMG_DATA = 1
+IMG_NUM_DATA = 2
+
+
 def low_res(img, n):
     return downscale_local_mean(img, (n, n))
 
@@ -34,6 +39,10 @@ def crop_shape(c):
 
 
 class GISettings:
+    """
+    Class to parse settings files:
+        settings of the experiment and global settings
+    """
 
     def __init__(self, path):
         with open(path, 'r') as f:
@@ -41,16 +50,76 @@ class GISettings:
         for attr in settings:
             setattr(self, attr, settings[attr])
 
-        if hasattr(self, 'DIR'):
+        if hasattr(self, 'GSFILE'):
             self.settings_path = dirname(path)
-            self.DIR = realpath(join(self.settings_path, self.DIR))
             self.GSFILE = join(self.settings_path, self.GSFILE)
 
+        if hasattr(self, 'DIR'):
+            self.DIR = realpath(join(self.settings_path, self.DIR))
+            self.FORMAT = IMG_CROP_DATA
+        if hasattr(self, 'REF_DIR'):
+            self.REF_DIR = realpath(join(self.settings_path, self.REF_DIR))
+        if hasattr(self, 'OBJ_DIR'):
+            self.OBJ_DIR = realpath(join(self.settings_path, self.OBJ_DIR))
+            self.FORMAT = IMG_IMG_DATA
+        if hasattr(self, 'OBJ_FILE'):
+            self.OBJ_FILE = realpath(join(self.settings_path, self.OBJ_FILE))
+            self.FORMAT = IMG_NUM_DATA
 
-def ImgFinder(settings):
-    dir_name = settings.DIR
-    return [join(dir_name, f) for f in listdir(dir_name)[:settings.N]
-            if isfile(join(dir_name, f)) and f.endswith(settings.EXT)]
+
+def find_images(dir_name, img_num, img_format):
+    """
+    Find paths to `img_num` images of `img_format` format
+    in `dir_name` directory
+
+    Parameters
+    ----------
+    dir_name : str
+        Path to a directory containing images.
+    img_num : int
+        Number of images.
+    img_format : str
+        Format of images, for example bmp, png, etc.
+
+    Returns
+    -------
+    list
+        List of paths to images in dir_name.
+
+    """
+    return [join(dir_name, f) for f in listdir(dir_name)[:img_num]
+            if isfile(join(dir_name, f)) and f.endswith(img_format)]
+
+
+def get_images(dir_name, settings):
+    """
+    Find paths to `settings.N` images of `settings.EXT` format
+    in `dir_name` directory with error processing
+
+    Parameters
+    ----------
+    dir_name : str
+        Path to a directory containing images.
+    settings : GISettings
+        Parsed settings of the experiment.
+
+    Raises
+    ------
+    IOError
+        No images found.
+
+    Returns
+    -------
+    img_paths : list
+        List of paths to images in dir_name.
+
+    """
+    img_num = settings.N
+    img_format = settings.EXT
+    img_paths = find_images(dir_name, img_num, img_format)
+    if len(img_paths) == 0:
+        raise IOError(f'Не найдено изображений в выбранной папке: {dir_name}')
+    return img_paths
 
 
 def get_diff_img(ref_img, obj_img, settings):
@@ -65,11 +134,60 @@ def get_diff_img(ref_img, obj_img, settings):
         return ref_img - obj_img
 
 
-def get_obj_and_ref_imgs(path, settings):
-    img = io.imread(path, 0)
+def get_objref_imgcrop(path, settings):
+    """
+    Construct single reference and objective data pair
+    if reference and objective data must be cropped from the one image
 
-    ref_img = crop(img, settings.REF_CROP)
-    obj_img = crop(img, settings.OBJ_CROP)
+    Parameters
+    ----------
+    path : str
+        Path to a directory containing reference and objective channels images.
+    settings : GISettings
+        Parsed settings of the experiment.
+
+    Returns
+    -------
+    ref_data: np.ndarray
+        An array with reference channel data.
+    obj_data : np.ndarray
+        An array with objective channel data.
+
+    """
+    return get_objref_twoimgs(path, path, settings)
+
+
+def get_objref_twoimgs(ref_path, obj_path, settings):
+    """
+    Construct single reference and objective data pair
+    if reference and objective data are images in different directories
+
+    Parameters
+    ----------
+    ref_path : str
+        Path to a directory containing reference channel images.
+    obj_path : str
+        Path to a directory containing objective channel images.
+    settings : GISettings
+        Parsed settings of the experiment.
+
+    Returns
+    -------
+    ref_data: np.ndarray
+        An array with reference channel data.
+    obj_data : np.ndarray
+        An array with objective channel data.
+
+    """
+    ref_img = io.imread(ref_path, 0)
+
+    if ref_path == obj_path:
+        obj_img = ref_img
+    else:
+        obj_img = io.imread(obj_path, 0)
+
+    ref_img = crop(ref_img, settings.REF_CROP)
+    obj_img = crop(obj_img, settings.OBJ_CROP)
 
     if settings.BACKET:
         obj_data = np.sum(obj_img)
@@ -81,7 +199,30 @@ def get_obj_and_ref_imgs(path, settings):
     else:
         ref_data = ref_img
 
-    return ref_data.astype(np.uint8), obj_data.astype(np.uint8)
+    return ref_data.astype(np.uint8), obj_data
+
+
+def get_ref_imgnum(ref_path, settings):
+    """
+    Construct single reference data image
+    if reference data are images and objective data are numbers in a file
+
+    Parameters
+    ----------
+    ref_path : str
+        Path to a directory containing reference channel images.
+    settings : GISettings
+        Parsed settings of the experiment.
+
+    Returns
+    -------
+    ref_data: np.ndarray
+        An array with reference channel data.
+
+    """
+    img = io.imread(ref_path, 0)
+    ref_data = crop(img, settings.REF_CROP)
+    return ref_data.astype(np.uint8)
 
 
 def data_correlation(obj_data, ref_data):
@@ -120,6 +261,61 @@ def xycorr(self, p, w):
     return xycorr_width(sc)
 
 
+class ObjRefGenerator:
+
+    def __init__(self, settings, ref_data, obj_data):
+        '''
+        Здесь создается список объектных и референсных изображений
+        self.obj_data -- изображения объекта
+        self.ref_data -- изображения референсного пучка
+        '''
+        self.settings = settings
+        self.ref_data = ref_data
+        self.obj_data = obj_data
+
+        if self.settings.FORMAT == IMG_CROP_DATA:
+            self._create_data_crop()
+        elif self.settings.FORMAT == IMG_IMG_DATA:
+            self._create_data_twoimgs()
+        elif self.settings.FORMAT == IMG_NUM_DATA:
+            self._create_data_imgnum()
+
+    def _create_data_crop(self):
+        '''
+        Здесь создается список объектных и референсных изображений,
+        если данные представлены в виде картинок с двумя каналами одновременно
+        '''
+        img_paths = get_images(self.settings.DIR, self.settings)
+        for i, path in enumerate(img_paths):
+            self.ref_data[i, :, :], self.obj_data[i] = \
+                get_objref_imgcrop(path, self.settings)
+
+    def _create_data_twoimgs(self):
+        '''
+        Здесь создается список объектных и референсных изображений,
+        если данные представлены в виде отдельных картинок на каждый канал
+        '''
+        ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
+        obj_img_paths = get_images(self.settings.OBJ_DIR, self.settings)
+        img_paths = zip(ref_img_paths, obj_img_paths)
+
+        for i, paths in enumerate(img_paths):
+            self.ref_data[i, :, :], self.obj_data[i] = \
+                get_objref_twoimgs(*paths, self.settings)
+
+    def _create_data_imgnum(self):
+        '''
+        Здесь создается список объектных и референсных изображений,
+        если данные представлены в виде картинок для референсного канала
+        и текстового файла со значениями для объектного канала
+        '''
+        ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
+        self.obj_data = np.loadtxt(self.settings.OBJ_FILE).flatten()
+
+        for i, path in enumerate(ref_img_paths):
+            self.ref_data[i, :, :] = get_ref_imgnum(path, self.settings)
+
+
 class ImgAnalyser:
 
     def __init__(self, settings_file, n_images=0):
@@ -141,7 +337,7 @@ class ImgAnalyser:
         print(f'Reference images size is {self.Nx}x{self.Ny}')
 
         self.obj_data = np.zeros(self.N)
-        self.ref_data = np.zeros((self.N, self.Ny, self.Nx), dtype=np.int16)
+        self.ref_data = np.zeros((self.N, self.Ny, self.Nx), dtype=np.uint8)
         self.gi = np.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         self.sc = np.zeros((self.Ny, self.Nx), dtype=np.float32)
@@ -151,27 +347,13 @@ class ImgAnalyser:
         self.tc = np.ones(self.settings.TCPOINTS)
         self.cd = np.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.g2 = 0
-
-        self._create_data()
-
-    def _create_data(self):
-        '''
-        Здесь создается список объектных и референсных изображений
-        self.obj_data -- изображения объекта
-        self.ref_data -- изображения референсного пучка
-        '''
-        imgs_path = ImgFinder(self.settings)
-        if len(imgs_path) == 0:
-            raise IOError(
-                'Не найдено изображений в выбранной папке: %s' % self.settings.DIR)
-
-        for i, path in enumerate(imgs_path):
-            self.ref_data[i, :, :], self.obj_data[i] = \
-                get_obj_and_ref_imgs(path, self.settings)
+        # !!!IMPORTANT: Side effects to ref_data and obj_data
+        ObjRefGenerator(self.settings, self.ref_data, self.obj_data)
 
     def calculate_ghostimage(self):
         '''
-        Расчет корреляции между последовательностью суммарных сигналов в объектном плече
+        Расчет корреляции между последовательностью
+        суммарных сигналов в объектном плече
         и поточечными последовательностями сигналов в референсном плече
         '''
         self.gi = data_correlation(self.obj_data, self.ref_data)
@@ -179,7 +361,8 @@ class ImgAnalyser:
     @property
     def diff(self):
         '''
-        Расчет разности между последовательностями объектных и референсных изображений
+        Расчет разности между последовательностями
+        объектных и референсных изображений
         '''
         return np.mean(self.ref_data, axis=0)
 
@@ -194,16 +377,19 @@ class ImgAnalyser:
         point_data = self.ref_data[:, y, x]
         self.sc = data_correlation(point_data, self.ref_data)
 
-    def calculate_xycorr_widths(self, window_points: int=50, nx: int=10, ny: int=10,
-                                n_jobs: int=-2):
+    def calculate_xycorr_widths(self, window_points: int = 50,
+                                nx: int = 10, ny: int = 10,
+                                n_jobs: int = -2):
         """
-        Расчет ширин функции когерентности или поперечной корреляции для разных пикселей
-
+        Расчет ширин функции когерентности или
+        поперечной корреляции для разных пикселей
 
         Parameters
         ----------
         window_points : int, optional
-            Width of the calculation window (in points) for the each point of calculation. The default is 50.
+            Width of the calculation window (in points)
+            for the each point of calculation.
+            The default is 50.
         nx : int, optional
             Number of points in x dimention. The default is 10.
             The centrum is in the centrum of self.ref_data images:
@@ -242,7 +428,8 @@ class ImgAnalyser:
         ravel_data = self.ref_data.reshape((self.N, rdim * 2))
         ravel_data = ravel_data[:, rdim - npoints // 2: rdim + npoints // 2]
         self.tc[1:] = np.mean([np.apply_along_axis(cf1d, 1, ravel_data, i)
-                               for i in range(1, self.settings.TCPOINTS)], axis=-1)
+                               for i in range(1, self.settings.TCPOINTS)],
+                              axis=-1)
 
     def calculate_contrast(self):
         self.cd = (self.gi - np.mean(self.gi)) / self.gi
@@ -382,7 +569,8 @@ class ImgViewer:
 
     def accumulate(self, data):
         '''
-        Добавление изображений в виде массивов numpy.ndarray или list в список отображения
+        Добавление изображений в виде
+        массивов numpy.ndarray или list в список отображения
         '''
         if type(data) == list:
             data = np.array(data)

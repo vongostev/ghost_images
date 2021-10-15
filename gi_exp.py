@@ -11,8 +11,8 @@ from gi.experiment import ImgAnalyser, ImgViewer
 """
 settings_file -- путь к файлу с настройками эксперимента в формате json
 """
-# settings_file = r'H:\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
-settings_file = r'C:\Users\von.gostev\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
+settings_file = r'H:\SciData\GI\17_04_2019_obj_v\17_04_2019_obj_v.txt'
+#settings_file = r'C:\Users\von.gostev\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
 
 analyser = ImgAnalyser(settings_file, n_images=100)
 # analyser.calculate_all()
