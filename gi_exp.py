@@ -15,12 +15,12 @@ settings_file = r'H:\SciData\GI\17_04_2019_obj_v\17_04_2019_obj_v.txt'
 #settings_file = r'C:\Users\von.gostev\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
 
 analyser = ImgAnalyser(settings_file, n_images=100)
-# analyser.calculate_all()
+analyser.calculate_all()
 # analyser.calculate_ghostimage()
 # analyser.calculate_contrast()
 # analyser.calculate_xycorr()
 # analyser.calculate_timecorr()
-analyser.calculate_xycorr_widths(nx=10, ny=10)
+# analyser.calculate_xycorr_widths(nx=5, ny=5)
 # print(analyser.information)
 
 # viewer = ImgViewer(analyser.ghost_data)

@@ -6,7 +6,8 @@ Created on Mon Jun  7 17:40:40 2021
 '''
 from os import listdir
 from os.path import isfile, join, dirname, realpath
-
+import sys
+import time
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -18,8 +19,16 @@ import json
 from skimage.transform import downscale_local_mean
 from skimage import io
 
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, wrap_non_picklable_objects
+from logging import Logger, StreamHandler, Formatter
 
+log = Logger('EXP')
+
+handler = StreamHandler(sys.stdout)
+handler.setLevel(10)
+formatter = Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+log.addHandler(handler)
 
 IMG_CROP_DATA = 0
 IMG_IMG_DATA = 1
@@ -45,6 +54,7 @@ class GISettings:
     """
 
     def __init__(self, path):
+        log.info(f'Reading settings file {path}')
         with open(path, 'r') as f:
             settings = json.load(f)
         for attr in settings:
@@ -53,18 +63,28 @@ class GISettings:
         if hasattr(self, 'GSFILE'):
             self.settings_path = dirname(path)
             self.GSFILE = join(self.settings_path, self.GSFILE)
+            log.info(f'Reading global settings')
 
         if hasattr(self, 'DIR'):
             self.DIR = realpath(join(self.settings_path, self.DIR))
             self.FORMAT = IMG_CROP_DATA
+            log.info('Reference and objective data cropped from the one image\n' +
+                     f'Ref and obj: {self.DIR}\n')
         if hasattr(self, 'REF_DIR'):
             self.REF_DIR = realpath(join(self.settings_path, self.REF_DIR))
         if hasattr(self, 'OBJ_DIR'):
             self.OBJ_DIR = realpath(join(self.settings_path, self.OBJ_DIR))
             self.FORMAT = IMG_IMG_DATA
+            log.info('Reference and objective data loaded from different directories\n' +
+                     f'Ref: {self.REF_DIR}\n' +
+                     f'Obj: {self.OBJ_DIR}')
         if hasattr(self, 'OBJ_FILE'):
             self.OBJ_FILE = realpath(join(self.settings_path, self.OBJ_FILE))
             self.FORMAT = IMG_NUM_DATA
+            log.info('Reference data loaded from images and objective data loaded a file\n' +
+                     f'Ref: {self.REF_DIR}\n' +
+                     f'Obj: {self.OBJ_FILE}')
+        log.info(f'Settings loaded from {path}')
 
 
 def find_images(dir_name, img_num, img_format):
@@ -225,10 +245,16 @@ def get_ref_imgnum(ref_path, settings):
     return ref_data.astype(np.uint8)
 
 
-def data_correlation(obj_data, ref_data):
+def data_correlation(obj_data, ref_data, parallel_njobs=-1):
     def gi(pixel_data):
         return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]
-    return np.apply_along_axis(gi, 0, ref_data)
+
+    img_shape = ref_data.shape[1:]
+    ref_data = ref_data.reshape(ref_data.shape[0], -1).T
+    corr_data = Parallel(n_jobs=parallel_njobs)(
+        delayed(gi)(s) for s in ref_data)
+    return np.asarray(corr_data).reshape(img_shape)
+    # return np.apply_along_axis(gi, 0, ref_data)
 
 
 def FWHM(n, data1d):
@@ -250,6 +276,7 @@ def xycorr_width(sc):
     return FWHM(nx, xslice), FWHM(ny, yslice)
 
 
+@wrap_non_picklable_objects
 def xycorr(self, p, w):
     x, y = p
     lx = max(x - w // 2, 0)
@@ -257,7 +284,8 @@ def xycorr(self, p, w):
     tx = min(x + w // 2, self.Nx)
     ty = min(y + w // 2, self.Ny)
     point_data = self.ref_data[:, y, x]
-    sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
+    sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx],
+                          self.parallel_njobs)
     return xycorr_width(sc)
 
 
@@ -318,23 +346,25 @@ class ObjRefGenerator:
 
 class ImgAnalyser:
 
-    def __init__(self, settings_file, n_images=0):
+    def __init__(self, settings_file, n_images=0, parallel_njobs=-1):
         '''
         ARGUMENTS
         ---------
 
         settings_file -- путь к файлу с настройками эксперимента в формате json
         '''
+        self.parallel_njobs = parallel_njobs
+
         self.settings = GISettings(settings_file)
         if n_images:
             self.settings.N = n_images
 
-        print('Experiment settings:', json.dumps(
-            self.settings.__dict__, indent=4))
+        log.info('Experiment settings:\n' + json.dumps(
+            self.settings.__dict__, indent=4)[2:-2])
 
         self.N = self.settings.N
         self.Ny, self.Nx = crop_shape(self.settings.REF_CROP)
-        print(f'Reference images size is {self.Nx}x{self.Ny}')
+        log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
         self.obj_data = np.zeros(self.N)
         self.ref_data = np.zeros((self.N, self.Ny, self.Nx), dtype=np.uint8)
@@ -348,7 +378,11 @@ class ImgAnalyser:
         self.cd = np.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.g2 = 0
         # !!!IMPORTANT: Side effects to ref_data and obj_data
+        log.info('Loading obj and ref data')
+        t = time.time()
         ObjRefGenerator(self.settings, self.ref_data, self.obj_data)
+        log.info(
+            f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
 
     def calculate_ghostimage(self):
         '''
@@ -356,7 +390,13 @@ class ImgAnalyser:
         суммарных сигналов в объектном плече
         и поточечными последовательностями сигналов в референсном плече
         '''
-        self.gi = data_correlation(self.obj_data, self.ref_data)
+        log.info('Calculating ghost image')
+        t = time.time()
+
+        self.gi = data_correlation(self.obj_data, self.ref_data,
+                                   self.parallel_njobs)
+        log.info(
+            f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
 
     @property
     def diff(self):
@@ -370,12 +410,18 @@ class ImgAnalyser:
         '''
         Расчет функции когерентности или поперечной корреляции
         '''
+        log.info('Calculating spatial correlation function')
+        t = time.time()
+
         if x == 0:
             x = self.Nx // 2
         if y == 0:
             y = self.Ny // 2
         point_data = self.ref_data[:, y, x]
-        self.sc = data_correlation(point_data, self.ref_data)
+        self.sc = data_correlation(point_data, self.ref_data,
+                                   self.parallel_njobs)
+        log.info(
+            f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
     def calculate_xycorr_widths(self, window_points: int = 50,
                                 nx: int = 10, ny: int = 10,
@@ -408,19 +454,26 @@ class ImgAnalyser:
         Two arrays with xy correlation function widths: by x  and by y.
 
         """
+        log.info('Calculating spatial correlation function width in different pixels')
+        t = time.time()
 
         X = np.arange(- nx // 2, nx // 2) + self.Nx // 2
         Y = np.arange(-ny // 2, ny // 2) + self.Ny // 2
         points = np.array(np.meshgrid(X, Y)).T.reshape(-1, 2)
         w = window_points
 
-        _rawd = Parallel(n_jobs=n_jobs)(
+        _rawd = Parallel(n_jobs=n_jobs, backend='threading')(
             delayed(xycorr)(self, p, w) for p in points)
         _rawdx = np.array([w[0] for w in _rawd]).reshape((ny, nx))
         _rawdy = np.array([w[1] for w in _rawd]).reshape((ny, nx))
         self.sc_widths = (_rawdx, _rawdy)
+        log.info(
+            f'Spatial correlation function widths calculated. Elapsed time {(time.time() - t):.3f} s')
 
     def calculate_timecorr(self, npoints=100):
+        log.info('Calculating time correlation function')
+        t = time.time()
+
         def cf1d(data, i):
             return np.nan_to_num(np.corrcoef(data[:-i], data[i:])[0, 1])
 
@@ -430,6 +483,8 @@ class ImgAnalyser:
         self.tc[1:] = np.mean([np.apply_along_axis(cf1d, 1, ravel_data, i)
                                for i in range(1, self.settings.TCPOINTS)],
                               axis=-1)
+        log.info(
+            f'Spatial time function calculated. Elapsed time {(time.time() - t):.3f} s')
 
     def calculate_contrast(self):
         self.cd = (self.gi - np.mean(self.gi)) / self.gi
