@@ -64,11 +64,21 @@ def slm_expand(phase_profile, npoints):
     py, px = phase_profile.shape
     xo = (npoints - px) // 2
     yo = (npoints - py) // 2
-    if px >= npoints and py >= npoints:
-        yo = abs(yo)
-        xo = abs(yo)
-        return phase_profile[yo:yo+npoints, xo:xo+npoints]
+    _p = phase_profile
 
-    _profile = np.ones((npoints, npoints), dtype=np.complex128)
-    _profile[yo:yo+npoints, xo:xo+npoints] = phase_profile
-    return _profile
+    # print(phase_profile.shape, xo, yo, npoints)
+    if xo < 0:
+        xo = abs(xo)
+        _p = phase_profile[:, xo:xo+npoints]
+    else:
+        _xones = np.ones((py, xo))
+        _p = np.hstack((_xones, phase_profile, _xones))
+    # print(_p.shape)
+    if yo < 0:
+        yo = abs(yo)
+        _p = _p[yo:yo+npoints, :]
+    else:
+        _yones = np.ones((yo, px))
+        _p = np.vstack((_yones, _p, _yones))
+    # print(_p.shape)
+    return _p
