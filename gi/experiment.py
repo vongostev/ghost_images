@@ -378,7 +378,7 @@ class ImgAnalyser:
         # !!!IMPORTANT: Side effects to ref_data and obj_data
         log.info('Loading obj and ref data')
         t = time.time()
-        ObjRefGenerator(self.settings, self.ref_data, self.obj_data, self.bo)
+        ObjRefGenerator(self.settings, self.ref_data, self.obj_data, binning_order)
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
 
