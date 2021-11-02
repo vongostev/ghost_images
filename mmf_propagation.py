@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Parameters
-NA = 0.27
+NA = 0.4
 radius = 10  # in microns
 n1 = 1.45
 wl = 0.6328  # wavelength in microns
@@ -44,6 +44,7 @@ def plot_modes(modes_coeffs):
 # Create the fiber object
 profile = pyMMF.IndexProfile(npoints=npoints, areaSize=area_size)
 # Initialize the index profile
+# profile.initSI4CoreIndex(n1=n1, a=2, core_offset=4, NA=NA)
 profile.initStepIndex(n1=n1, a=radius, NA=NA)
 # Instantiate the solver
 solver = pyMMF.propagationModeSolver()
@@ -55,20 +56,20 @@ solver.setWL(wl)
 # Estimate the number of modes for a graded index fiber
 Nmodes_estim = pyMMF.estimateNumModesSI(wl, radius, NA, pola=1)
 
-modes_semianalytical = solver.solve(mode='SI', curvature=None)
-# modes_eig = solver.solve(nmodesMax=501, boundary='close',
-#                          mode='eig', curvature=None, propag_only=True)
-modes_list2 = np.array(modes_semianalytical.profiles)[
-    np.argsort(modes_semianalytical.betas)[::-1]]
+# modes_semianalytical = solver.solve(mode='SI', curvature=None)
+modes_eig = solver.solve(nmodesMax=Nmodes_estim, boundary='close',
+                         mode='eig', curvature=None, propag_only=True)
+modes_list = np.array(modes_eig.profiles)[
+    np.argsort(modes_eig.betas)[::-1]]
 
-# fiber_length = 50e4  # um
-# fiber_matrix = modes_semianalytical.getPropagationMatrix(fiber_length)
+fiber_length = 50e4  # um
+fiber_matrix = modes_eig.getPropagationMatrix(fiber_length)
 
-# fig, axes = plt.subplots(4, 9, figsize=(20, 10))
-# for i, ax in enumerate(np.ravel(axes)):
-#     ax.imshow(np.abs(modes_list[i]).reshape((npoints, npoints)))
-#     ax.set_xticks([])
-#     ax.set_yticks([])
-#     ax.set_xticklabels([])
-#     ax.set_yticklabels([])
-# plt.show()
+fig, axes = plt.subplots(4, 9, figsize=(20, 10))
+for i, ax in enumerate(np.ravel(axes)):
+    ax.imshow(np.abs(modes_list[i]).reshape((npoints, npoints)))
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+plt.show()

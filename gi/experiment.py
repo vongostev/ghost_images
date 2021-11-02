@@ -44,7 +44,13 @@ def crop(img, c):
 
 
 def crop_shape(c):
-    return (c[3] - c[2], c[1] - c[0])
+    return np.array([c[3] - c[2], c[1] - c[0]])
+
+
+def imread(path, binning_order, crop_shape):
+    img = io.imread(path, 0)
+    img = crop(img, crop_shape)
+    return low_res(img, binning_order).astype(np.uint8)
 
 
 class GISettings:
@@ -144,9 +150,8 @@ def get_images(dir_name, settings):
 
 def get_diff_img(ref_img, obj_img, settings):
     if ref_img.shape != obj_img.shape:
-        ny_ref, nx_ref = crop_shape(settings.REF_CROP)
-        ny_obj, nx_obj = crop_shape(settings.OBJ_CROP)
-
+        ny_ref, nx_ref = ref_img.shape
+        ny_obj, nx_obj = obj_img.shape
         nx = np.min(nx_ref, nx_obj)
         ny = np.min(ny_ref, ny_obj)
         return ref_img[:ny, :nx] - obj_img[:ny, :nx]
@@ -199,15 +204,8 @@ def get_objref_twoimgs(ref_path, obj_path, settings):
         An array with objective channel data.
 
     """
-    ref_img = io.imread(ref_path, 0)
-
-    if ref_path == obj_path:
-        obj_img = ref_img
-    else:
-        obj_img = io.imread(obj_path, 0)
-
-    ref_img = crop(ref_img, settings.REF_CROP)
-    obj_img = crop(obj_img, settings.OBJ_CROP)
+    ref_img = imread(ref_path, settings.BINNING, settings.REF_CROP)
+    obj_img = imread(obj_path, settings.BINNING, settings.OBJ_CROP)
 
     if settings.BACKET:
         obj_data = np.sum(obj_img)
@@ -240,9 +238,8 @@ def get_ref_imgnum(ref_path, settings):
         An array with reference channel data.
 
     """
-    img = io.imread(ref_path, 0)
-    ref_data = crop(img, settings.REF_CROP)
-    return ref_data.astype(np.uint8)
+    return imread(ref_path, settings.BINNING, settings.REF_CROP)
+
 
 
 def data_correlation(obj_data, ref_data, parallel_njobs=-1):
@@ -291,7 +288,7 @@ def xycorr(self, p, w):
 
 class ObjRefGenerator:
 
-    def __init__(self, settings, ref_data, obj_data):
+    def __init__(self, settings, ref_data, obj_data, binning_order=1):
         '''
         Здесь создается список объектных и референсных изображений
         self.obj_data -- изображения объекта
@@ -300,6 +297,7 @@ class ObjRefGenerator:
         self.settings = settings
         self.ref_data = ref_data
         self.obj_data = obj_data
+        self.bo = binning_order
 
         if self.settings.FORMAT == IMG_CROP_DATA:
             self._create_data_crop()
@@ -346,7 +344,7 @@ class ObjRefGenerator:
 
 class ImgAnalyser:
 
-    def __init__(self, settings_file, n_images=0, parallel_njobs=-1):
+    def __init__(self, settings_file, binning_order=1, n_images=0, parallel_njobs=-1):
         '''
         ARGUMENTS
         ---------
@@ -354,8 +352,8 @@ class ImgAnalyser:
         settings_file -- путь к файлу с настройками эксперимента в формате json
         '''
         self.parallel_njobs = parallel_njobs
-
         self.settings = GISettings(settings_file)
+        self.settings.BINNING = binning_order
         if n_images:
             self.settings.N = n_images
 
@@ -363,7 +361,7 @@ class ImgAnalyser:
             self.settings.__dict__, indent=4)[2:-2])
 
         self.N = self.settings.N
-        self.Ny, self.Nx = crop_shape(self.settings.REF_CROP)
+        self.Ny, self.Nx = (crop_shape(self.settings.REF_CROP) // binning_order).astype(int)
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
         self.obj_data = np.zeros(self.N)
@@ -380,7 +378,7 @@ class ImgAnalyser:
         # !!!IMPORTANT: Side effects to ref_data and obj_data
         log.info('Loading obj and ref data')
         t = time.time()
-        ObjRefGenerator(self.settings, self.ref_data, self.obj_data)
+        ObjRefGenerator(self.settings, self.ref_data, self.obj_data, self.bo)
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
 
@@ -562,9 +560,9 @@ class ImgAnalyser:
             f'CCD-камера работает в режиме программного запуска с выдержкой {sets.EXCERT} мс ' +
             f'и усилением {sets.AMPL}',
             f'Частота съемки составляет {sets.FREQ} Гц.',
-            'Область регистрации объектного пучка составляет {0:d} на {1:d} точек'.format(
+            'Область регистрации объектного пучка составляет {0:d} на {1:d} пикселей'.format(
                 *crop_shape(sets.OBJ_CROP)),
-            f'Область регистрации опорного пучка составляет {self.Nx:d} на {self.Ny:d} точек',
+            f'Область регистрации опорного пучка составляет {self.Nx:d} на {self.Ny:d} пикселей',
             f'Всего обрабатывается {self.N:d} изображений.']
         self.text_cf = [
             f'Ширина пространственной автокорреляционной функции в опорном пучке составляет {self.xycorr_width:f} точек',
