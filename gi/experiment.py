@@ -50,7 +50,9 @@ def crop_shape(c):
 def imread(path, binning_order, crop_shape):
     img = io.imread(path, 0)
     img = crop(img, crop_shape)
-    return low_res(img, binning_order).astype(np.uint8)
+    if binning_order > 1:
+        img = low_res(img, binning_order)
+    return img
 
 
 class GISettings:
