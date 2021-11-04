@@ -71,7 +71,7 @@ class GISettings:
         if hasattr(self, 'GSFILE'):
             self.settings_path = dirname(path)
             self.GSFILE = join(self.settings_path, self.GSFILE)
-            log.info(f'Reading global settings')
+            log.info('Reading global settings')
 
         if hasattr(self, 'DIR'):
             self.DIR = realpath(join(self.settings_path, self.DIR))
@@ -161,6 +161,7 @@ def get_diff_img(ref_img, obj_img, settings):
         return ref_img - obj_img
 
 
+@wrap_non_picklable_objects
 def get_objref_imgcrop(path, settings):
     """
     Construct single reference and objective data pair
@@ -184,6 +185,7 @@ def get_objref_imgcrop(path, settings):
     return get_objref_twoimgs(path, path, settings)
 
 
+@wrap_non_picklable_objects
 def get_objref_twoimgs(ref_path, obj_path, settings):
     """
     Construct single reference and objective data pair
@@ -222,6 +224,7 @@ def get_objref_twoimgs(ref_path, obj_path, settings):
     return ref_data.astype(np.uint8), obj_data
 
 
+@wrap_non_picklable_objects
 def get_ref_imgnum(ref_path, settings):
     """
     Construct single reference data image
@@ -243,7 +246,6 @@ def get_ref_imgnum(ref_path, settings):
     return imread(ref_path, settings.BINNING, settings.REF_CROP)
 
 
-
 def data_correlation(obj_data, ref_data, parallel_njobs=-1):
     def gi(pixel_data):
         return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]
@@ -253,7 +255,6 @@ def data_correlation(obj_data, ref_data, parallel_njobs=-1):
     corr_data = Parallel(n_jobs=parallel_njobs)(
         delayed(gi)(s) for s in ref_data)
     return np.asarray(corr_data).reshape(img_shape)
-    # return np.apply_along_axis(gi, 0, ref_data)
 
 
 def FWHM(n, data1d):
@@ -290,16 +291,15 @@ def xycorr(self, p, w):
 
 class ObjRefGenerator:
 
-    def __init__(self, settings, ref_data, obj_data, binning_order=1):
+    def __init__(self, settings, binning_order=1, parallel_njobs=1):
         '''
         Здесь создается список объектных и референсных изображений
         self.obj_data -- изображения объекта
         self.ref_data -- изображения референсного пучка
         '''
         self.settings = settings
-        self.ref_data = ref_data
-        self.obj_data = obj_data
         self.bo = binning_order
+        self.njobs = parallel_njobs
 
         if self.settings.FORMAT == IMG_CROP_DATA:
             self._create_data_crop()
@@ -314,9 +314,12 @@ class ObjRefGenerator:
         если данные представлены в виде картинок с двумя каналами одновременно
         '''
         img_paths = get_images(self.settings.DIR, self.settings)
-        for i, path in enumerate(img_paths):
-            self.ref_data[i, :, :], self.obj_data[i] = \
-                get_objref_imgcrop(path, self.settings)
+        data_list = Parallel(n_jobs=self.njobs, backend='threading')(
+            delayed(get_objref_imgcrop)(path, self.settings)
+            for i, path in enumerate(img_paths))
+        ref_data_list, obj_data_list = zip(*data_list)
+        self.ref_data = np.array(ref_data_list)
+        self.obj_data = np.array(obj_data_list)
 
     def _create_data_twoimgs(self):
         '''
@@ -326,10 +329,12 @@ class ObjRefGenerator:
         ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
         obj_img_paths = get_images(self.settings.OBJ_DIR, self.settings)
         img_paths = zip(ref_img_paths, obj_img_paths)
-
-        for i, paths in enumerate(img_paths):
-            self.ref_data[i, :, :], self.obj_data[i] = \
-                get_objref_twoimgs(*paths, self.settings)
+        data_list = Parallel(n_jobs=self.njobs, backend='threading')(
+            delayed(get_objref_twoimgs)(path, self.settings)
+            for i, path in enumerate(img_paths))
+        ref_data_list, obj_data_list = zip(*data_list)
+        self.ref_data = np.array(ref_data_list)
+        self.obj_data = np.array(obj_data_list)
 
     def _create_data_imgnum(self):
         '''
@@ -338,15 +343,20 @@ class ObjRefGenerator:
         и текстового файла со значениями для объектного канала
         '''
         ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
+        ref_data_list = Parallel(n_jobs=self.njobs, backend='threading')(
+            delayed(get_ref_imgnum)(path, self.settings)
+            for i, path in enumerate(ref_img_paths))
+        self.ref_data = np.array(ref_data_list)
         self.obj_data = np.loadtxt(self.settings.OBJ_FILE).flatten()
 
-        for i, path in enumerate(ref_img_paths):
-            self.ref_data[i, :, :] = get_ref_imgnum(path, self.settings)
+    def unpack(self):
+        return self.ref_data, self.obj_data
 
 
 class ImgAnalyser:
 
-    def __init__(self, settings_file, binning_order=1, n_images=0, parallel_njobs=-1):
+    def __init__(self, settings_file, binning_order=1, n_images=0, parallel_njobs=-1,
+                 parallel_reading=True):
         '''
         ARGUMENTS
         ---------
@@ -363,7 +373,8 @@ class ImgAnalyser:
             self.settings.__dict__, indent=4)[2:-2])
 
         self.N = self.settings.N
-        self.Ny, self.Nx = (crop_shape(self.settings.REF_CROP) // binning_order).astype(int)
+        self.Ny, self.Nx = (crop_shape(
+            self.settings.REF_CROP) // binning_order).astype(int)
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
         self.obj_data = np.zeros(self.N)
@@ -377,10 +388,15 @@ class ImgAnalyser:
         self.tc = np.ones(self.settings.TCPOINTS)
         self.cd = np.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.g2 = 0
-        # !!!IMPORTANT: Side effects to ref_data and obj_data
+
         log.info('Loading obj and ref data')
         t = time.time()
-        ObjRefGenerator(self.settings, self.ref_data, self.obj_data, binning_order)
+        data_generator = ObjRefGenerator(
+            self.settings, binning_order,
+            parallel_njobs if parallel_reading else 1)
+        self.ref_data, self.obj_data = data_generator.unpack()
+        #Update Nx, Ny because of rounding in low_res
+        self.Ny, self.Nx = self.ref_data.shape[1:]
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
 
@@ -478,7 +494,7 @@ class ImgAnalyser:
             return np.nan_to_num(np.corrcoef(data[:-i], data[i:])[0, 1])
 
         rdim = self.Nx * self.Ny // 2
-        ravel_data = self.ref_data.reshape((self.N, rdim * 2))
+        ravel_data = self.ref_data.reshape((self.N, -1))
         ravel_data = ravel_data[:, rdim - npoints // 2: rdim + npoints // 2]
         self.tc[1:] = np.mean([np.apply_along_axis(cf1d, 1, ravel_data, i)
                                for i in range(1, self.settings.TCPOINTS)],
