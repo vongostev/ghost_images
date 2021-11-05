@@ -221,7 +221,7 @@ def get_objref_twoimgs(ref_path, obj_path, settings):
     else:
         ref_data = ref_img
 
-    return ref_data.astype(np.uint8), obj_data
+    return ref_data, obj_data
 
 
 @wrap_non_picklable_objects
