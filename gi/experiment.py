@@ -22,6 +22,8 @@ from skimage import io
 from joblib import Parallel, delayed, wrap_non_picklable_objects
 from logging import Logger, StreamHandler, Formatter
 
+from .reduction_interfaces import show_single_method, show_methods
+
 log = Logger('EXP')
 
 handler = StreamHandler(sys.stdout)
@@ -246,7 +248,12 @@ def get_ref_imgnum(ref_path, settings):
     return imread(ref_path, settings.BINNING, settings.REF_CROP)
 
 
-def data_correlation(obj_data, ref_data, parallel_njobs=-1):
+def data_correlation(obj_data, ref_data, parallel_njobs=-1, fast=True):
+    if fast:
+        return np.tensordot(obj_data - obj_data.mean(),
+                            ref_data - ref_data.mean(axis=0),
+                            axes=1) / obj_data.size
+
     def gi(pixel_data):
         return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]
 
@@ -285,7 +292,7 @@ def xycorr(self, p, w):
     ty = min(y + w // 2, self.Ny)
     point_data = self.ref_data[:, y, x]
     sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx],
-                          self.parallel_njobs)
+                          self.parallel_njobs, self.fast_corr)
     return xycorr_width(sc)
 
 
@@ -356,7 +363,7 @@ class ObjRefGenerator:
 class ImgAnalyser:
 
     def __init__(self, settings_file, binning_order=1, n_images=0, parallel_njobs=-1,
-                 parallel_reading=True):
+                 parallel_reading=True, fast_corr=True):
         '''
         ARGUMENTS
         ---------
@@ -366,6 +373,7 @@ class ImgAnalyser:
         self.parallel_njobs = parallel_njobs
         self.settings = GISettings(settings_file)
         self.settings.BINNING = binning_order
+        self.fast_corr = fast_corr
         if n_images:
             self.settings.N = n_images
 
@@ -395,7 +403,7 @@ class ImgAnalyser:
             self.settings, binning_order,
             parallel_njobs if parallel_reading else 1)
         self.ref_data, self.obj_data = data_generator.unpack()
-        #Update Nx, Ny because of rounding in low_res
+        # Update Nx, Ny because of rounding in low_res
         self.Ny, self.Nx = self.ref_data.shape[1:]
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
@@ -410,7 +418,7 @@ class ImgAnalyser:
         t = time.time()
 
         self.gi = data_correlation(self.obj_data, self.ref_data,
-                                   self.parallel_njobs)
+                                   self.parallel_njobs, self.fast_corr)
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -435,7 +443,7 @@ class ImgAnalyser:
             y = self.Ny // 2
         point_data = self.ref_data[:, y, x]
         self.sc = data_correlation(point_data, self.ref_data,
-                                   self.parallel_njobs)
+                                   self.parallel_njobs, self.fast_corr)
         log.info(
             f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -622,6 +630,9 @@ class ImgAnalyser:
         plt.plot(np.arange(1, self.Ny + 1), self.sc[:, self.Nx // 2])
         plt.savefig(join(img_dir, f'sc{self.N}.{img_ext}'),
                     format=img_ext, dpi=150)
+
+    def test_reduction(self):
+        return show_methods(self.obj_data, self.ref_data)
 
 
 class ImgViewer:
