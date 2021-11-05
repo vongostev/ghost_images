@@ -44,9 +44,10 @@ def plot_modes(modes_coeffs):
 # Create the fiber object
 profile = pyMMF.IndexProfile(npoints=npoints, areaSize=area_size)
 # Initialize the index profile
-# profile.initStepIndexMultiCore(n1=n1, a=5, core_offset=12, NA=NA,
-#                               dims=6, layers=1)
-profile.initStepIndexConcentric(core_offset=15, layers=1, a=5)
+profile.initStepIndexMicrostructured(n0=n1, a=5, core_offset=12, NA=NA,
+                              dims=6, layers=1)
+# profile.initStepIndexConcentric(core_offset=15, layers=1, a=5)
+# profile.initStepIndexMicrostructured()
 # profile.initStepIndex(n1=n1, a=5, NA=NA)
 # Instantiate the solver
 solver = pyMMF.propagationModeSolver()
@@ -58,7 +59,7 @@ solver.setWL(wl)
 plt.imshow(profile.n.reshape((npoints, npoints)))
 plt.show()
 # # Estimate the number of modes for a graded index fiber
-Nmodes_estim = pyMMF.estimateNumModesSI(wl, 10, NA, pola=1)
+Nmodes_estim = 50#pyMMF.estimateNumModesSI(wl, 10, NA, pola=1)
 
 r_max = 3.8*radius
 # modes_radial = solver.solve(mode='radial',
@@ -74,7 +75,7 @@ r_max = 3.8*radius
 #                             )
 # modes_semianalytical = solver.solve(mode='SI', curvature=None)
 modes_eig = solver.solve(nmodesMax=Nmodes_estim,
-                         boundary='close',
+                         boundary='periodic',
                          mode='eig',
                          curvature=None,
                          propag_only=True)

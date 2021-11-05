@@ -100,6 +100,7 @@ def show_methods(obj_data, ref_data, show: bool = True) -> None:
     img_id = None
     src_img = None
     noise_var = 0.
+    size = model.pixel_size * model.img_shape[0]/2
 
     estimates = {}
 
@@ -107,7 +108,11 @@ def show_methods(obj_data, ref_data, show: bool = True) -> None:
     estimates[TraditionalGI.name] = TraditionalGI(model)(measurement)
     logger.info("Traditional GI formation took %.3g s.",
                 perf_counter() - t_estim_part)
-
+    plt.imshow(estimates[TraditionalGI.name], cmap=plt.cm.gray,  # pylint: disable=E1101
+               extent=[-size, size, -size, size])
+    plt.xlabel("x, мкм")
+    plt.ylabel("y, мкм")
+    plt.show()
     # whitened_measurement = noise_var**0.5 * measurement
 
     alpha_values = {("tc2", 3, 1e-1): 6e-3, ("tva2", 3, 1e-1): 0.158,
@@ -124,12 +129,10 @@ def show_methods(obj_data, ref_data, show: bool = True) -> None:
                              GICompressiveSensingL1Haar,
                              GICompressiveTC2,
                              GICompressiveAnisotropicTotalVariation,
-                             #GICompressiveAnisotropicTotalVariation2
+                             # GICompressiveAnisotropicTotalVariation2
                              GIDenseReduction,
                              GISparseReduction
                              ]
-
-    size = model.pixel_size * model.img_shape[0]/2
 
     for processing_method in cs_processing_methods:
         t_estim_start = perf_counter()
@@ -145,7 +148,6 @@ def show_methods(obj_data, ref_data, show: bool = True) -> None:
         plt.xlabel("x, мкм")
         plt.ylabel("y, мкм")
         plt.show()
-
 
     tau_values = {(2, 0.0): 1.0, (2, 0.1): 1,
                   (3, 0.): 1e-05, (3, 0.1): 0.1,
@@ -163,4 +165,4 @@ def show_methods(obj_data, ref_data, show: bool = True) -> None:
     # )
     t_end = perf_counter()
     logger.info("show_methods for %d patterns and %s shape took %.3g s",
-                measurement.size, src_img.shape, t_end - t_start)
+                measurement.size, ref_data[0].shape, t_end - t_start)
