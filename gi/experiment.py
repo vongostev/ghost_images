@@ -250,9 +250,14 @@ def get_ref_imgnum(ref_path, settings):
 
 def data_correlation(obj_data, ref_data, parallel_njobs=-1, fast=True):
     if fast:
+        log.info(
+            'Compute correlation function fast using `np.tensordot`')
         return np.tensordot(obj_data - obj_data.mean(),
                             ref_data - ref_data.mean(axis=0),
                             axes=1) / obj_data.size
+
+    log.info(
+        'Compute correlation function slow but exact using `np.corrcoef`')
 
     def gi(pixel_data):
         return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]

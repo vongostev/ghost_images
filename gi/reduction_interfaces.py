@@ -124,7 +124,10 @@ def show_methods(obj_data, ref_data, show: bool = True) -> None:
                              GICompressiveSensingL1Haar,
                              GICompressiveTC2,
                              GICompressiveAnisotropicTotalVariation,
-                             GICompressiveAnisotropicTotalVariation2]
+                             #GICompressiveAnisotropicTotalVariation2
+                             GIDenseReduction,
+                             GISparseReduction
+                             ]
 
     size = model.pixel_size * model.img_shape[0]/2
 
@@ -151,13 +154,13 @@ def show_methods(obj_data, ref_data, show: bool = True) -> None:
                   (8, 0.): 1e-05, (8, 0.1): 1e-5}
     tau_values = defaultdict(lambda: 1., tau_values)
 
-    processing_methods = [TraditionalGI] + \
-        cs_processing_methods + [GIDenseReduction, GISparseReduction]
+    # processing_methods = [TraditionalGI] + \
+    #     cs_processing_methods + [GIDenseReduction, GISparseReduction]
 
-    estimates[GIDenseReduction.name] = GIDenseReduction(model)(measurement)
-    estimates[GISparseReduction.name] = GISparseReduction(model)(
-        measurement, tau_values[(img_id, noise_var)], basis="eig"
-    )
+    # estimates[GIDenseReduction.name] = GIDenseReduction(model)(measurement)
+    # estimates[GISparseReduction.name] = GISparseReduction(model)(
+    #     measurement, tau_values[(img_id, noise_var)], basis="eig"
+    # )
     t_end = perf_counter()
     logger.info("show_methods for %d patterns and %s shape took %.3g s",
                 measurement.size, src_img.shape, t_end - t_start)
