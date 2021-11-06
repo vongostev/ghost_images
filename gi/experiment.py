@@ -341,7 +341,7 @@ class ObjRefGenerator:
         obj_img_paths = get_images(self.settings.OBJ_DIR, self.settings)
         img_paths = zip(ref_img_paths, obj_img_paths)
         data_list = Parallel(n_jobs=self.njobs, backend='threading')(
-            delayed(get_objref_twoimgs)(path, self.settings)
+            delayed(get_objref_twoimgs)(*path, self.settings)
             for i, path in enumerate(img_paths))
         ref_data_list, obj_data_list = zip(*data_list)
         self.ref_data = np.array(ref_data_list)
