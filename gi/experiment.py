@@ -358,7 +358,7 @@ class ObjRefGenerator:
             delayed(get_ref_imgnum)(path, self.settings)
             for i, path in enumerate(ref_img_paths))
         self.ref_data = np.array(ref_data_list)
-        self.obj_data = np.loadtxt(self.settings.OBJ_FILE).flatten()
+        self.obj_data = np.loadtxt(self.settings.OBJ_FILE).flatten()[:self.settings.N]
 
     def unpack(self):
         return self.ref_data, self.obj_data
