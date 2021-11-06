@@ -358,8 +358,17 @@ class ObjRefGenerator:
             delayed(get_ref_imgnum)(path, self.settings)
             for i, path in enumerate(ref_img_paths))
         self.ref_data = np.array(ref_data_list)
-        self.obj_data = np.load(self.settings.OBJ_FILE).flatten()[:self.settings.N]
-
+        obj_file_name_split = self.settings.OBJ_FILE.split('.')
+        ext = obj_file_name_split[-1]
+        if ext == 'npy':
+            obj_data = np.load(self.settings.OBJ_FILE)
+        elif ext in ['txt', 'csv', 'dat']:
+            obj_data = np.loadtxt(self.settings.OBJ_FILE)
+        else:
+            raise NotImplementedError(
+                f'Objective channel data must be in `npy`, `txt`, `csv`, or `dat` format, not `{ext}`')
+        self.obj_data = obj_data.flatten()[:self.settings.N]
+        
     def unpack(self):
         return self.ref_data, self.obj_data
 
