@@ -46,7 +46,7 @@ profile = pyMMF.IndexProfile(npoints=npoints, areaSize=area_size)
 # Initialize the index profile
 # profile.initStepIndexMultiCore(n1=n1, a=5, core_offset=12, NA=NA,
 #                               dims=6, layers=1)
-profile.initStepIndexConcentric(core_offset=15, layers=1, a=5)
+profile.initStepIndexConcentric(core_pitch=15, layers=1, a=5)
 # profile.initStepIndex(n1=n1, a=5, NA=NA)
 # Instantiate the solver
 solver = pyMMF.propagationModeSolver()
