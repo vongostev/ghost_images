@@ -64,16 +64,13 @@ class GISettings:
     """
 
     def __init__(self, path):
+        self.settings_path = dirname(path)
+
         log.info(f'Reading settings file {path}')
         with open(path, 'r') as f:
             settings = json.load(f)
         for attr in settings:
             setattr(self, attr, settings[attr])
-
-        if hasattr(self, 'GSFILE'):
-            self.settings_path = dirname(path)
-            self.GSFILE = join(self.settings_path, self.GSFILE)
-            log.info('Reading global settings')
 
         if hasattr(self, 'DIR'):
             self.DIR = realpath(join(self.settings_path, self.DIR))
@@ -359,7 +356,16 @@ class ObjRefGenerator:
             delayed(get_ref_imgnum)(path, self.settings)
             for i, path in enumerate(ref_img_paths))
         self.ref_data = np.array(ref_data_list)
-        self.obj_data = np.loadtxt(self.settings.OBJ_FILE).flatten()
+        obj_file_name_split = self.settings.OBJ_FILE.split('.')
+        ext = obj_file_name_split[-1]
+        if ext == 'npy':
+            obj_data = np.load(self.settings.OBJ_FILE)
+        elif ext in ['txt', 'csv', 'dat']:
+            obj_data = np.loadtxt(self.settings.OBJ_FILE)
+        else:
+            raise NotImplementedError(
+                f'Objective channel data must be in `npy`, `txt`, `csv`, or `dat` format, not `{ext}`')
+        self.obj_data = obj_data.flatten()[:self.settings.N]
 
     def unpack(self):
         return self.ref_data, self.obj_data
@@ -560,81 +566,6 @@ class ImgAnalyser:
     @property
     def timecorr_width(self):
         return FWHM(len(self.times), self.tc) * self.times[1]
-
-    @property
-    def information(self):
-        self.global_settings = GISettings(self.settings.GSFILE)
-
-        sets = self.settings
-        gsets = self.global_settings
-
-        self.text_global = [getattr(sets, 'INFO', '') + '\n']
-        self.text_global += [
-            'Условия проведения эксперимента\n',
-            'Источник теплового света основан на He-Ne лазере, ' +
-            'излучение которого проходит через матовый диск, ' +
-            f'вращающийся с угловой скоростью {gsets.DISKV} град/с.',
-            f'Диаметр лазерного пучка на матовом диске составляет {gsets.BEAMD:.2f} см.',
-            f'Диск находится на расстоянии {gsets.AL1} см от линзы L1 ' +
-            f'с фокусным расстоянием {gsets.F1} см, и в сопряженной ' +
-            f'оптической плоскости на расстоянии {gsets.BL1} см от линзы ' +
-            'строится изображение поверхности диска.',
-            'Это изображение передается в объектную плоскость системы линзой L2 ' +
-            f'с фокусным расстоянием {gsets.F2} см, ' +
-            f'стоящей в {gsets.AL2} см от диска и в {gsets.BL2} см от объекта.',
-            f'В объектном плече стоит линза L3 с фокусным расстоянием {gsets.F3} см в {gsets.AL3} см ' +
-            f'от объекта и в {gsets.BL3} см от CCD-камеры',
-            'В опорном плече плоскость, идентичная объектной передается на CCD-камеру ' +
-            f'линзой L4 с фокусным расстоянием {gsets.F4} см, ' +
-            f'расположенной в {gsets.AL4} см от передаваемой плоскости и в {gsets.BL4} см от CCD-камеры']
-        self.text_ccd = [
-            f'CCD-камера работает в режиме программного запуска с выдержкой {sets.EXCERT} мс ' +
-            f'и усилением {sets.AMPL}',
-            f'Частота съемки составляет {sets.FREQ} Гц.',
-            'Область регистрации объектного пучка составляет {0:d} на {1:d} пикселей'.format(
-                *crop_shape(sets.OBJ_CROP)),
-            f'Область регистрации опорного пучка составляет {self.Nx:d} на {self.Ny:d} пикселей',
-            f'Всего обрабатывается {self.N:d} изображений.']
-        self.text_cf = [
-            f'Ширина пространственной автокорреляционной функции в опорном пучке составляет {self.xycorr_width:f} точек',
-            f'Ширина временной корреляционной функции в опорном пучке составляет {self.timecorr_width:f} c.']
-        self.text_gi = [
-            f'Средняя контрастность фантомного изображения составляет {self.contrast:.2%}',
-            f'Видность фантомного изображения составляет {np.mean(self.gi) / np.max(self.gi):.2%}']
-
-        return self.text_global + self.text_ccd + self.text_cf + self.text_gi
-
-    def save_information(self):
-        with open(join(self.settings.DIR, 'info.txt'), 'w') as f:
-            f.write('\n'.join(self.information))
-
-    def save_pictures(self, img_ext='png', thresh_mean=False):
-        # np.mean(self.ref_data)*np.mean(self.obj_data)
-        if thresh_mean:
-            noise = np.mean(self.gi)
-            self.gi[np.where(self.gi <= noise)] = 0
-
-        img_dir = self.settings.DIR
-        plt.imsave(
-            join(img_dir, f'gi{self.N}.{img_ext}'),
-            self.gi, format=img_ext, dpi=150)
-        plt.imsave(
-            join(img_dir, f'sc{self.N}.{img_ext}'),
-            self.sc, format=img_ext, dpi=150)
-        plt.imsave(join(img_dir, f'rd.{img_ext}'),
-                   self.ref_data[0], format=img_ext, dpi=150)
-        plt.imsave(join(img_dir, f'cd{self.N}.{img_ext}'),
-                   self.cd, format=img_ext, dpi=150)
-
-        plt.figure()
-        plt.plot(*self.tc)
-        plt.savefig(join(img_dir, f'tc.{img_ext}'),
-                    format=img_ext, dpi=150)
-
-        plt.figure()
-        plt.plot(np.arange(1, self.Ny + 1), self.sc[:, self.Nx // 2])
-        plt.savefig(join(img_dir, f'sc{self.N}.{img_ext}'),
-                    format=img_ext, dpi=150)
 
     def test_reduction(self):
         return show_methods(self.obj_data, self.ref_data)
