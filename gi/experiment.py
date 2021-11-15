@@ -60,20 +60,17 @@ def imread(path, binning_order, crop_shape):
 class GISettings:
     """
     Class to parse settings files:
-        settings of the experiment and global settings
+        settings of the experiment
     """
 
     def __init__(self, path):
         log.info(f'Reading settings file {path}')
+        self.settings_path = dirname(path)
+
         with open(path, 'r') as f:
             settings = json.load(f)
         for attr in settings:
             setattr(self, attr, settings[attr])
-
-        if hasattr(self, 'GSFILE'):
-            self.settings_path = dirname(path)
-            self.GSFILE = join(self.settings_path, self.GSFILE)
-            log.info('Reading global settings')
 
         if hasattr(self, 'DIR'):
             self.DIR = realpath(join(self.settings_path, self.DIR))
