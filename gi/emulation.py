@@ -13,7 +13,7 @@ import numpy as np
 from collections import namedtuple
 
 from lightprop2d import Beam2D
-from .experiment import find_images, get_ref_imgnum
+from .experiment import find_images, get_ref_imgnum, data_correlation, xycorr_width
 
 from logging import Logger, StreamHandler, Formatter
 
@@ -88,18 +88,6 @@ def generate_data_exp(self, path, crop):
     return ref_img, obj_data
 
 
-def data_correlation(obj_data, ref_data, parallel_njobs=-1):
-    def gi(pixel_data):
-        return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]
-
-    npoints = ref_data.shape[-1]
-    ref_data = ref_data.reshape(ref_data.shape[0], -1).T
-    corr_data = Parallel(n_jobs=parallel_njobs)(delayed(gi)(s)
-                                                for s in ref_data)
-    return np.asarray(corr_data).reshape((npoints, npoints))
-    # return np.apply_along_axis(gi, 0, ref_data)
-
-
 @dataclass
 class ImgEmulator:
 
@@ -137,7 +125,7 @@ class ImgEmulator:
     def __post_init__(self):
         """
         Клаcс предназначен для эмуляции эксперимента
-        по наблюдению фантомных изображенийв квазитепловом свете
+        по наблюдению фантомных изображений в квазитепловом свете
 
         """
 
@@ -172,12 +160,10 @@ class ImgEmulator:
         self.ref_data = np.stack(self.data['ref'])
         log.info(
             f'Obj and ref data generated. Elapsed time {(time.time() - t):.3f} s')
-        self.ghost_data = np.zeros_like(self.ref_data[0])
-        self.xycorr_data = np.zeros_like(self.ref_data[0])
+        self.gi = np.zeros_like(self.ref_data[0])
+        self.sc = np.zeros_like(self.ref_data[0])
         self.npoints = self.ghost_data.shape[0]
         del self.data
-
-        # self.obj_data /= np.max(self.obj_data)
 
     def calculate_ghostimage(self):
         """
@@ -186,7 +172,7 @@ class ImgEmulator:
         """
         log.info('Calculating ghost image')
         t = time.time()
-        self.ghost_data = data_correlation(self.obj_data, self.ref_data,
+        self.gi = data_correlation(self.obj_data, self.ref_data,
                                            self.parallel_njobs)
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
@@ -199,7 +185,23 @@ class ImgEmulator:
         t = time.time()
         central_point_data = \
             self.ref_data[:, self.npoints // 2, self.npoints // 2]
-        self.xycorr_data = data_correlation(central_point_data, self.ref_data,
+        self.sc = data_correlation(central_point_data, self.ref_data,
                                             self.parallel_njobs)
         log.info(
             f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
+
+    def g2_intensity(self, noise):
+        self.g2 = np.mean((self.ref_data - noise)**2, axis=0) / \
+            np.mean(self.ref_data - noise, axis=0)**2
+
+    @property
+    def ghost_data(self):
+        return self.gi
+
+    @property
+    def xycorr_data(self):
+        return self.sc
+
+    @property
+    def xycorr_width(self):
+        return xycorr_width(self.sc)

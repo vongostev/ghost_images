@@ -5,24 +5,23 @@ Created on Tue Jun  8 18:34:32 2021
 @author: vonGostev
 """
 import __init__
-import pyMMF
 import numpy as np
-import cupy as cp
 import matplotlib.pyplot as plt
 
-from lightprop2d import Beam2D, random_round_hole, rectangle_hole, um
+from lightprop2d import Beam2D, random_round_hole_phase, random_round_hole, rectangle_hole, um
 from gi import ImgEmulator
+from scipy.linalg import expm
+from joblib import Parallel, delayed
 
 # Parameters
-NA = 0.2
-radius = 25  # in microns
+radius = 31.25  # in microns
 n1 = 1.45
 wl = 0.632  # wavelength in microns
 
 # calculate the field on an area larger than the diameter of the fiber
-area_size = 5*radius
+area_size = 3.5 * radius
 npoints = 2**8  # resolution of the window
-fiber_length = 50e4  # um
+xp = np
 
 
 def imshow(arr):
@@ -49,73 +48,64 @@ def generate_beams(area_size, npoints, wl,
 
     ref = Beam2D(area_size, npoints, wl, init_field=obj.field, use_gpu=use_gpu)
 
-    obj.propagate(z_obj)
-    ref.propagate(z_ref)
+    if z_obj > 0:
+        obj.propagate(z_obj)
+    if z_ref > 0:
+        ref.propagate(z_ref)
 
     if object_gen is not None:
         obj.coordinate_filter(f_gen=object_gen, fargs=object_gen_args)
 
-    return ref.iprofile.get(), obj.iprofile.get()
+    return ref.iprofile, obj.iprofile
 
 
-# Create the fiber object
-profile = pyMMF.IndexProfile(npoints=npoints, areaSize=area_size)
-# Initialize the index profile
-profile.initStepIndex(n1=n1, a=radius, NA=NA)
-# Instantiate the solver
-solver = pyMMF.propagationModeSolver()
-# Set the profile to the solver
-solver.setIndexProfile(profile)
-# Set the wavelength
-solver.setWL(wl)
+def calc_gi(fiber_props, ifgen):
+    with np.load(fiber_props) as data:
+        fiber_op = data["fiber_op"]
+        modes = xp.array(data["modes_list"])
 
-# Estimate the number of modes for a graded index fiber
-Nmodes_estim = pyMMF.estimateNumModesSI(wl, radius, NA, pola=1)
+    fiber_len = 10 / um
+    fiber_matrix = expm(1j * fiber_op * fiber_len)
+    modes_matrix = xp.array(np.vstack(modes).T)
+    modes_matrix_t = modes_matrix.T
+    modes_matrix_dot_t = modes_matrix.T.dot(modes_matrix)
+    # emulator = ImgEmulator(area_size*um, npoints,
+    #                        wl*um, imgs_number=1000,
+    #                        init_field_gen=random_round_hole,
+    #                        init_gen_args=((radius - 1)*um,),
+    #                        object_gen=rectangle_hole,
+    #                        object_gen_args=(10*um, 50*um),
+    #                        use_gpu=1
+    #                        )
 
-xp = cp
+    # emulator.calculate_xycorr()
+    # corr_before_fiber = emulator.xycorr_data
 
-try:
-    with np.load("fiber_properties.npz") as data:
-        fiber_matrix = xp.array(data["fiber_matrix"])
-        modes_list = np.array(data["modes_list"])
-except FileNotFoundError:
-    modes = solver.solve(mode='SI', curvature=None)
-    # modes_eig = solver.solve(nmodesMax=500, boundary='close',
-    #                          mode='eig', curvature=None, propag_only=True)
-    modes_list = np.array(modes.profiles)[np.argsort(modes.betas)[::-1]]
-    fiber_matrix = xp.array(modes.getPropagationMatrix(fiber_length))
-    np.savez_compressed("fiber_properties",
-                        fiber_matrix=modes.getPropagationMatrix(fiber_length),
-                        modes_list=modes_list)
+    emulator = ImgEmulator(area_size*um, npoints,
+                           wl*um, imgs_number=10,
+                           init_field_gen=ifgen,
+                           init_gen_args=(radius*um,),
+                           iprofiles_gen=generate_beams,
+                           iprofiles_gen_args=(
+                               modes, modes_matrix_t,
+                               modes_matrix_dot_t, fiber_matrix),
+                           object_gen=rectangle_hole,
+                           object_gen_args=(10*um, 40*um),
+                           use_gpu=0
+                           )
+
+    emulator.calculate_ghostimage()
+    emulator.calculate_xycorr()
+    return {'gi': emulator.ghost_data, 'sc': emulator.xycorr_data}
 
 
-modes_matrix = xp.array(np.vstack(modes_list).T)
-modes_matrix_t = modes_matrix.T
-modes_matrix_dot_t = modes_matrix.T.dot(modes_matrix)
-emulator = ImgEmulator(area_size*um, npoints,
-                       wl*um, imgs_number=1000,
-                       init_field_gen=random_round_hole,
-                       init_gen_args=((radius - 1)*um,),
-                       object_gen=rectangle_hole,
-                       object_gen_args=(10*um, 50*um),
-                       use_gpu=1
-                       )
+fiber_props_list = ["../rsf_report_1/mmf_SI_50_properties.npz",
+                    "../rsf_report_1/mmf_GRIN_62.5_properties.npz"]
+ifgen_list = [random_round_hole_phase, random_round_hole]
+params_keys = ['SI__slm', 'GRIN__slm', 'SI__dmd', 'GRIN__dmd']
 
-emulator.calculate_xycorr()
-corr_before_fiber = emulator.xycorr_data
+params = np.array(np.meshgrid(fiber_props_list, ifgen_list)).reshape((2, -1)).T
 
-emulator = ImgEmulator(area_size*um, npoints,
-                       wl*um, imgs_number=1000,
-                       init_field_gen=random_round_hole,
-                       init_gen_args=((radius - 1)*um,),
-                       iprofiles_gen=generate_beams,
-                       iprofiles_gen_args=(
-                           modes_list, modes_matrix_t,
-                           modes_matrix_dot_t, fiber_matrix),
-                       object_gen=rectangle_hole,
-                       object_gen_args=(10*um, 50*um),
-                       use_gpu=1
-                       )
-
-emulator.calculate_xycorr()
-corr_after_fiber = emulator.xycorr_data
+_fiber_data = Parallel(n_jobs=2)(delayed(calc_gi)(*p) for p in params)
+fiber_data = {k: v for k, v in zip(params_keys, _fiber_data)}
+np.savez_compressed('gi_data_grin_si.npz', fiber_data)
