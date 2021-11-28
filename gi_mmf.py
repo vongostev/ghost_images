@@ -22,6 +22,7 @@ wl = 0.632  # wavelength in microns
 area_size = 3.5 * radius
 npoints = 2**8  # resolution of the window
 xp = np
+bounds = [-area_size / 2, area_size / 2]
 
 
 def imshow(arr):
@@ -69,20 +70,9 @@ def calc_gi(fiber_props, ifgen):
     modes_matrix = xp.array(np.vstack(modes).T)
     modes_matrix_t = modes_matrix.T
     modes_matrix_dot_t = modes_matrix.T.dot(modes_matrix)
-    # emulator = ImgEmulator(area_size*um, npoints,
-    #                        wl*um, imgs_number=1000,
-    #                        init_field_gen=random_round_hole,
-    #                        init_gen_args=((radius - 1)*um,),
-    #                        object_gen=rectangle_hole,
-    #                        object_gen_args=(10*um, 50*um),
-    #                        use_gpu=1
-    #                        )
-
-    # emulator.calculate_xycorr()
-    # corr_before_fiber = emulator.xycorr_data
 
     emulator = ImgEmulator(area_size*um, npoints,
-                           wl*um, imgs_number=10,
+                           wl*um, imgs_number=1000,
                            init_field_gen=ifgen,
                            init_gen_args=(radius*um,),
                            iprofiles_gen=generate_beams,
@@ -109,3 +99,26 @@ params = np.array(np.meshgrid(fiber_props_list, ifgen_list)).reshape((2, -1)).T
 _fiber_data = Parallel(n_jobs=2)(delayed(calc_gi)(*p) for p in params)
 fiber_data = {k: v for k, v in zip(params_keys, _fiber_data)}
 np.savez_compressed('gi_data_grin_si.npz', fiber_data)
+
+
+lbl = 'abcd'
+fig, ax = plt.subplots(2, 2, figsize=(6, 6), dpi=200)
+ax = np.array(ax).flatten()
+for i, fd in zip(range(4), fiber_data.items()):
+    param, data = fd
+    ax[i].imshow(data['gi'], extent=bounds * 2)
+    ax[i].set_xlabel(f'({lbl[i]}) ' + param.replace('__', ', '))
+plt.tight_layout()
+plt.savefig('gi_model.png', dpi=200)
+plt.show()
+
+lbl = 'abcd'
+fig, ax = plt.subplots(2, 2, figsize=(6, 6), dpi=200)
+ax = np.array(ax).flatten()
+for i, fd in zip(range(4), fiber_data.items()):
+    param, data = fd
+    ax[i].imshow(data['sc'], extent=bounds * 2)
+    ax[i].set_xlabel(f'({lbl[i]}) ' + param.replace('__', ', '))
+plt.tight_layout()
+plt.savefig('sc_model.png', dpi=200)
+plt.show()
