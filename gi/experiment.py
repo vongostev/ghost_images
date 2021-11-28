@@ -94,7 +94,7 @@ class GISettings:
         log.info(f'Settings loaded from {path}')
 
 
-def find_images(dir_name, img_num, img_format):
+def find_images(dir_name: str, img_num: str, img_format: str):
     """
     Find paths to `img_num` images of `img_format` format
     in `dir_name` directory
@@ -118,7 +118,7 @@ def find_images(dir_name, img_num, img_format):
             if isfile(join(dir_name, f)) and f.endswith(img_format)]
 
 
-def get_images(dir_name, settings):
+def get_images(dir_name: str, settings: GISettings):
     """
     Find paths to `settings.N` images of `settings.EXT` format
     in `dir_name` directory with error processing
@@ -149,7 +149,7 @@ def get_images(dir_name, settings):
     return img_paths
 
 
-def get_diff_img(ref_img, obj_img, settings):
+def get_diff_img(ref_img, obj_img, settings: GISettings):
     if ref_img.shape != obj_img.shape:
         ny_ref, nx_ref = ref_img.shape
         ny_obj, nx_obj = obj_img.shape
@@ -161,7 +161,7 @@ def get_diff_img(ref_img, obj_img, settings):
 
 
 @wrap_non_picklable_objects
-def get_objref_imgcrop(path, settings):
+def get_objref_imgcrop(path, settings: GISettings):
     """
     Construct single reference and objective data pair
     if reference and objective data must be cropped from the one image
@@ -185,7 +185,7 @@ def get_objref_imgcrop(path, settings):
 
 
 @wrap_non_picklable_objects
-def get_objref_twoimgs(ref_path, obj_path, settings):
+def get_objref_twoimgs(ref_path: str, obj_path: str, settings: GISettings):
     """
     Construct single reference and objective data pair
     if reference and objective data are images in different directories
@@ -224,7 +224,7 @@ def get_objref_twoimgs(ref_path, obj_path, settings):
 
 
 @wrap_non_picklable_objects
-def get_ref_imgnum(ref_path, settings):
+def get_ref_imgnum(ref_path: str, settings: GISettings):
     """
     Construct single reference data image
     if reference data are images and objective data are numbers in a file
@@ -245,7 +245,28 @@ def get_ref_imgnum(ref_path, settings):
     return imread(ref_path, settings.BINNING, settings.REF_CROP)
 
 
-def data_correlation(obj_data, ref_data, parallel_njobs=-1, fast=True):
+def data_correlation(obj_data: np.ndarray, ref_data: np.ndarray,
+                     parallel_njobs: int = -1, fast: bool = True):
+    """
+
+
+    Parameters
+    ----------
+    obj_data : np.ndarray
+        DESCRIPTION.
+    ref_data : np.ndarray
+        DESCRIPTION.
+    parallel_njobs : int, optional
+        DESCRIPTION. The default is -1.
+    fast : bool, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
     if fast:
         log.info(
             'Compute correlation function fast using `np.tensordot`')
@@ -300,12 +321,27 @@ def xycorr(self, p, w):
 
 class ObjRefGenerator:
 
-    def __init__(self, settings, binning_order=1, parallel_njobs=1):
-        '''
+    def __init__(self, settings: GISettings, binning_order: int = 1,
+                 parallel_njobs: int = 1):
+        """
         Здесь создается список объектных и референсных изображений
         self.obj_data -- изображения объекта
         self.ref_data -- изображения референсного пучка
-        '''
+
+        Parameters
+        ----------
+        settings : GISettings
+            Набор настроек.
+        binning_order : int, optional
+            Порядок биннинга. The default is 1.
+        parallel_njobs : int, optional
+            Число потоков вычислений. The default is 1.
+
+        Returns
+        -------
+        None.
+
+        """
         self.settings = settings
         self.bo = binning_order
         self.njobs = parallel_njobs
@@ -373,14 +409,10 @@ class ObjRefGenerator:
 
 class ImgAnalyser:
 
-    def __init__(self, settings_file, binning_order=1, n_images=0, parallel_njobs=-1,
-                 parallel_reading=True, fast_corr=True):
-        '''
-        ARGUMENTS
-        ---------
+    def __init__(self, settings_file: str, binning_order: int = 1,
+                 n_images: int = 0, parallel_njobs: int = -1,
+                 parallel_reading: bool = True, fast_corr: bool = True):
 
-        settings_file -- путь к файлу с настройками эксперимента в формате json
-        '''
         self.parallel_njobs = parallel_njobs
         self.settings = GISettings(settings_file)
         self.settings.BINNING = binning_order

@@ -20,7 +20,7 @@ def scale(mask, kx, ky):     # fill A with B scaled by k
 
 
 @nb.njit(parallel=True, nogil=True)
-def slm_grid(dL, pixel_size=10e-4, pixel_gap=4e-5, shape=(1440, 1050),
+def modulate_grid(dL, pixel_size=10e-4, pixel_gap=4e-5, shape=(1440, 1050),
              angle=0):
     ngap = int(pixel_gap // dL)
     npixel = int(pixel_size // dL)
@@ -42,25 +42,39 @@ def slm_grid(dL, pixel_size=10e-4, pixel_gap=4e-5, shape=(1440, 1050),
     return grid_y * grid_x
 
 
-def slm_phaseprofile(dL, pixel_map, pixel_size=10e-4, pixel_gap=4e-5,
+def slm_modprofile(dL, pixel_map, pixel_size=10e-4, pixel_gap=4e-5,
                      angle=0):
     shape = pixel_map.shape
     ngap = int(pixel_gap // dL)
     npixel = int(pixel_size // dL)
 
-    grid = slm_grid(
+    grid = modulate_grid(
         dL, pixel_size, pixel_gap, shape, angle).astype(np.complex128)
     phase_mask = scale(pixel_map, int(max(1, npixel + ngap) * np.cos(angle)),
                        max(1, npixel + ngap))
     if ngap > 0:
         phase_mask = phase_mask[:-ngap, :]
     phase_mask = np.cos(phase_mask) + 1j * np.sin(phase_mask)
-    grid *= phase_mask
-    grid[grid == 0] = 1
-    return grid
+    return grid * phase_mask
 
 
-def slm_expand(phase_profile, npoints):
+def dmd_modprofile(dL, pixel_map, pixel_size=10e-4, pixel_gap=4e-5,
+                     angle=0):
+    shape = pixel_map.shape
+    ngap = int(pixel_gap // dL)
+    npixel = int(pixel_size // dL)
+
+    grid = modulate_grid(
+        dL, pixel_size, pixel_gap, shape, angle)
+    mask = scale(pixel_map, int(max(1, npixel + ngap) * np.cos(angle)),
+                       max(1, npixel + ngap))
+    if ngap > 0:
+        mask = mask[:-ngap, :]
+    return grid * mask
+
+
+
+def grid_expand(phase_profile, npoints):
     py, px = phase_profile.shape
     xo = (npoints - px) // 2
     yo = (npoints - py) // 2
