@@ -43,14 +43,14 @@ def generate_beams(area_size, npoints, wl,
                  init_field_gen=init_field_gen,
                  init_gen_args=init_gen_args, use_gpu=use_gpu)
 
+    if z_obj > 0:
+        obj.propagate(z_obj)
+    ref = Beam2D(area_size, npoints, wl, init_field=obj.field, use_gpu=use_gpu)
+
     modes_coeffs = obj.fast_deconstruct_by_modes(
         modes_matrix_t, modes_matrix_dot_t)
     obj.construct_by_modes(modes_profiles, fiber_matrix @ modes_coeffs)
 
-    ref = Beam2D(area_size, npoints, wl, init_field=obj.field, use_gpu=use_gpu)
-
-    if z_obj > 0:
-        obj.propagate(z_obj)
     if z_ref > 0:
         ref.propagate(z_ref)
 
@@ -72,16 +72,18 @@ def calc_gi(fiber_props, ifgen):
     modes_matrix_dot_t = modes_matrix.T.dot(modes_matrix)
 
     emulator = ImgEmulator(area_size*um, npoints,
-                           wl*um, imgs_number=1000,
+                           wl*um, imgs_number=3000,
                            init_field_gen=ifgen,
                            init_gen_args=(radius*um,),
                            iprofiles_gen=generate_beams,
                            iprofiles_gen_args=(
                                modes, modes_matrix_t,
-                               modes_matrix_dot_t, fiber_matrix),
+                               modes_matrix_dot_t, fiber_matrix,
+                           ),
                            object_gen=rectangle_hole,
                            object_gen_args=(10*um, 40*um),
-                           use_gpu=0
+                           use_gpu=0,
+                           z_obj=10*um
                            )
 
     emulator.calculate_ghostimage()
@@ -89,36 +91,45 @@ def calc_gi(fiber_props, ifgen):
     return {'gi': emulator.ghost_data, 'sc': emulator.xycorr_data}
 
 
-fiber_props_list = ["../rsf_report_1/mmf_SI_50_properties.npz",
-                    "../rsf_report_1/mmf_GRIN_62.5_properties.npz"]
-ifgen_list = [random_round_hole_phase, random_round_hole]
-params_keys = ['SI__slm', 'GRIN__slm', 'SI__dmd', 'GRIN__dmd']
+fiber_props_list = [
+    # "../rsf_report_1/mmf_SI_50_properties.npz",
+    "../rsf_report_1/mmf_GRIN_62.5_properties.npz"]
+ifgen_list = [
+    random_round_hole_phase,
+    # random_round_hole
+]
+params_keys = [
+    # 'SI__slm',
+    'GRIN__slm',
+    # 'SI__dmd',
+    # 'GRIN__dmd'
+]
 
 params = np.array(np.meshgrid(fiber_props_list, ifgen_list)).reshape((2, -1)).T
 
-_fiber_data = Parallel(n_jobs=2)(delayed(calc_gi)(*p) for p in params)
+_fiber_data = Parallel(n_jobs=1)(delayed(calc_gi)(*p) for p in params)
 fiber_data = {k: v for k, v in zip(params_keys, _fiber_data)}
-np.savez_compressed('gi_data_grin_si.npz', fiber_data)
+np.savez_compressed('gi_data_grin_si_test_cross.npz', fiber_data)
 
 
-lbl = 'abcd'
-fig, ax = plt.subplots(2, 2, figsize=(6, 6), dpi=200)
-ax = np.array(ax).flatten()
-for i, fd in zip(range(4), fiber_data.items()):
-    param, data = fd
-    ax[i].imshow(data['gi'], extent=bounds * 2)
-    ax[i].set_xlabel(f'({lbl[i]}) ' + param.replace('__', ', '))
-plt.tight_layout()
-plt.savefig('gi_model.png', dpi=200)
-plt.show()
+# lbl = 'abcd'
+# fig, ax = plt.subplots(2, 2, figsize=(6, 6), dpi=200)
+# ax = np.array(ax).flatten()
+# for i, fd in zip(range(4), fiber_data.items()):
+#     param, data = fd
+#     ax[i].imshow(data['gi'], extent=bounds * 2)
+#     ax[i].set_xlabel(f'({lbl[i]}) ' + param.replace('__', ', '))
+# plt.tight_layout()
+# plt.savefig('gi_model.png', dpi=200)
+# plt.show()
 
-lbl = 'abcd'
-fig, ax = plt.subplots(2, 2, figsize=(6, 6), dpi=200)
-ax = np.array(ax).flatten()
-for i, fd in zip(range(4), fiber_data.items()):
-    param, data = fd
-    ax[i].imshow(data['sc'], extent=bounds * 2)
-    ax[i].set_xlabel(f'({lbl[i]}) ' + param.replace('__', ', '))
-plt.tight_layout()
-plt.savefig('sc_model.png', dpi=200)
-plt.show()
+# lbl = 'abcd'
+# fig, ax = plt.subplots(2, 2, figsize=(6, 6), dpi=200)
+# ax = np.array(ax).flatten()
+# for i, fd in zip(range(4), fiber_data.items()):
+#     param, data = fd
+#     ax[i].imshow(data['sc'], extent=bounds * 2)
+#     ax[i].set_xlabel(f'({lbl[i]}) ' + param.replace('__', ', '))
+# plt.tight_layout()
+# plt.savefig('sc_model.png', dpi=200)
+# plt.show()
