@@ -5,7 +5,7 @@ Created on Mon Jun  7 17:40:40 2021
 @author: von.gostev
 '''
 from os import listdir
-from os.path import isfile, join, dirname, realpath
+from os.path import isfile, join, dirname, realpath, basename
 import sys
 import time
 import numpy as np
@@ -62,6 +62,7 @@ class GISettings:
     Class to parse settings files:
         settings of the experiment
     """
+    PREFIX = "pattern"
 
     def __init__(self, path):
         log.info(f'Reading settings file {path}')
@@ -94,7 +95,13 @@ class GISettings:
         log.info(f'Settings loaded from {path}')
 
 
-def find_images(dir_name: str, img_num: str, img_format: str):
+def sort_by_num(fname, prefix='pattern'):
+    name = basename(fname).split('.')[0]
+    num = int(name.replace(prefix, ''))
+    return int(num)
+
+
+def find_images(dir_name: str, img_num: str, img_format: str, img_prefix: str):
     """
     Find paths to `img_num` images of `img_format` format
     in `dir_name` directory
@@ -107,15 +114,19 @@ def find_images(dir_name: str, img_num: str, img_format: str):
         Number of images.
     img_format : str
         Format of images, for example bmp, png, etc.
-
+    img_prefix : str
+        Constant prefix of images names.
     Returns
     -------
     list
         List of paths to images in dir_name.
 
     """
-    return [join(dir_name, f) for f in listdir(dir_name)[:img_num]
-            if isfile(join(dir_name, f)) and f.endswith(img_format)]
+    img_list = [join(dir_name, f) for f in listdir(dir_name)[:img_num]
+                if isfile(join(dir_name, f)) and f.endswith(img_format)]
+
+    def fsort(s): return sort_by_num(s, img_prefix)
+    return sorted(img_list, key=fsort) if img_prefix else img_list
 
 
 def get_images(dir_name: str, settings: GISettings):
@@ -143,7 +154,7 @@ def get_images(dir_name: str, settings: GISettings):
     """
     img_num = settings.N
     img_format = settings.EXT
-    img_paths = find_images(dir_name, img_num, img_format)
+    img_paths = find_images(dir_name, img_num, img_format, settings.PREFIX)
     if len(img_paths) == 0:
         raise IOError(f'Не найдено изображений в выбранной папке: {dir_name}')
     return img_paths
