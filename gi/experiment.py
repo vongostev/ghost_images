@@ -62,7 +62,7 @@ class GISettings:
     Class to parse settings files:
         settings of the experiment
     """
-    PREFIX = "pattern"
+    PREFIX = ""
 
     def __init__(self, path):
         log.info(f'Reading settings file {path}')
