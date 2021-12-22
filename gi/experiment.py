@@ -462,7 +462,7 @@ class ImgAnalyser:
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
 
-    def calculate_ghostimage(self):
+    def calculate_ghostimage(self, data_start = 0, data_end = 0):
         '''
         Расчет корреляции между последовательностью
         суммарных сигналов в объектном плече
@@ -470,8 +470,8 @@ class ImgAnalyser:
         '''
         log.info('Calculating ghost image')
         t = time.time()
-
-        self.gi = data_correlation(self.obj_data, self.ref_data,
+        if data_end == 0: data_end = self.N
+        self.gi = data_correlation(self.obj_data[data_start,data_end], self.ref_dataz,
                                    self.parallel_njobs, self.fast_corr)
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
