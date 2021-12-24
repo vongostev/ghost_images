@@ -12,10 +12,10 @@ from gi.experiment import ImgAnalyser, ImgViewer
 settings_file -- путь к файлу с настройками эксперимента в формате json
 """
 # settings_file = r'H:\SciData\GI\17_04_2019_obj_v\17_04_2019_obj_v.txt'
-#settings_file = r'C:\Users\von.gostev\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
-settings_file = r'H:\SciData\GI\110921\110921.txt'
+settings_file = r'C:\Users\von.gostev\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
+# settings_file = r'H:\SciData\GI\110921\110921.txt'
 
-analyser = ImgAnalyser(settings_file, n_images=7000, parallel_njobs=-1,
+analyser = ImgAnalyser(settings_file, n_images=1000, parallel_njobs=-1,
                        parallel_reading=0, binning_order=1, fast_corr=1)
 # analyser.calculate_all()
 analyser.calculate_ghostimage()
