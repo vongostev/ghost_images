@@ -121,6 +121,7 @@ class ImgEmulator:
     parallel_njobs: int = 4
     suppress_log: bool = False
     log_file: str = ''
+    fast_corr: bool = False
 
     def __post_init__(self):
         """
@@ -173,7 +174,7 @@ class ImgEmulator:
         log.info('Calculating ghost image')
         t = time.time()
         self.gi = data_correlation(self.obj_data, self.ref_data,
-                                           self.parallel_njobs)
+                                   self.parallel_njobs, self.fast_corr)
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -186,7 +187,7 @@ class ImgEmulator:
         central_point_data = \
             self.ref_data[:, self.npoints // 2, self.npoints // 2]
         self.sc = data_correlation(central_point_data, self.ref_data,
-                                            self.parallel_njobs)
+                                   self.parallel_njobs, self.fast_corr)
         log.info(
             f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 

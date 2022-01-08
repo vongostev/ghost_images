@@ -122,11 +122,12 @@ def find_images(dir_name: str, img_num: str, img_format: str, img_prefix: str):
         List of paths to images in dir_name.
 
     """
-    img_list = [join(dir_name, f) for f in listdir(dir_name)[:img_num]
+    img_list = [join(dir_name, f) for f in listdir(dir_name)
                 if isfile(join(dir_name, f)) and f.endswith(img_format)]
 
     def fsort(s): return sort_by_num(s, img_prefix)
-    return sorted(img_list, key=fsort) if img_prefix else img_list
+    img_list = sorted(img_list, key=fsort) if img_prefix else img_list
+    return img_list[:img_num]
 
 
 def get_images(dir_name: str, settings: GISettings):
@@ -475,7 +476,7 @@ class ImgAnalyser:
         log.info('Calculating ghost image')
         t = time.time()
 
-        self.gi = data_correlation(self.obj_data[data_start:data_end], 
+        self.gi = data_correlation(self.obj_data[data_start:data_end],
                                    self.ref_data[data_start:data_end],
                                    self.parallel_njobs, self.fast_corr)
         log.info(
