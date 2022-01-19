@@ -1,1 +1,1 @@
-from .emulation import ImgEmulator
+from .emulation import GIEmulator
