@@ -86,7 +86,7 @@ def generate_data_exp(self, path, crop):
 
 
 @dataclass
-class ImgEmulator:
+class GIEmulator:
 
     area_size: float
     npoints: int

@@ -9,7 +9,7 @@ import numpy as np
 from lightprop2d import Beam2D, um, cm, rectangle_hole, gaussian_beam
 
 import matplotlib.pyplot as plt
-from gi.emulation import ImgEmulator
+from gi.emulation import GIEmulator
 import numba as nb
 import cupy as cp
 
@@ -99,15 +99,15 @@ if __name__ == "__main__":
             simdata[method][z] = {}
             for nimg in nimgs:
                 simdata[method][z][nimg] = {}
-                test = ImgEmulator(area_size, npoints, wl0, nimg,
-                                   init_field_gen=random_fbundle,
-                                   init_gen_args=(cores_num, *builders),
-                                   z_ref=z,
-                                   object_gen=rectangle_hole,
-                                   object_gen_args=(50, 200),
-                                   parallel_njobs=1,
-                                   use_gpu=True,
-                                   fast_corr=False)
+                test = GIEmulator(area_size, npoints, wl0, nimg,
+                                  init_field_gen=random_fbundle,
+                                  init_gen_args=(cores_num, *builders),
+                                  z_ref=z,
+                                  object_gen=rectangle_hole,
+                                  object_gen_args=(50, 200),
+                                  parallel_njobs=1,
+                                  use_gpu=True,
+                                  fast_corr=False)
                 test.calculate_xycorr()
                 test.calculate_ghostimage()
 

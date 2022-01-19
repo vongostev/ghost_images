@@ -419,7 +419,7 @@ class ObjRefGenerator:
         return self.ref_data, self.obj_data
 
 
-class ImgAnalyser:
+class GIExpDataProcessor:
 
     def __init__(self, settings_file: str, binning_order: int = 1,
                  n_images: int = 0, parallel_njobs: int = -1,

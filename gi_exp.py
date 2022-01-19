@@ -6,7 +6,7 @@ Created on Tue Jun  8 14:21:02 2021
 """
 import __init__
 import matplotlib.pyplot as plt
-from gi.experiment import ImgAnalyser, ImgViewer
+from gi.experiment import GIExpDataProcessor, ImgViewer
 
 """
 settings_file -- путь к файлу с настройками эксперимента в формате json
@@ -16,7 +16,7 @@ settings_file -- путь к файлу с настройками экспери
 # settings_file = r'H:\SciData\GI\110921\110921.txt'
 settings_file = r'H:\SciData\GI\211221_computational\ghost_proector_12_15_scatt.txt'
 
-analyser = ImgAnalyser(settings_file, n_images=1000, parallel_njobs=-1,
+analyser = GIExpDataProcessor(settings_file, n_images=1000, parallel_njobs=-1,
                        parallel_reading=1, binning_order=10, fast_corr=1)
 # analyser.calculate_all()
 analyser.calculate_ghostimage()

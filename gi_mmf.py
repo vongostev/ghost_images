@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from lightprop2d import Beam2D, random_round_hole_phase, random_round_hole, rectangle_hole, um
-from gi import ImgEmulator
+from gi import GIEmulator
 from scipy.linalg import expm
 from joblib import Parallel, delayed
 
@@ -71,20 +71,20 @@ def calc_gi(fiber_props, ifgen):
     modes_matrix_t = modes_matrix.T
     modes_matrix_dot_t = modes_matrix.T.dot(modes_matrix)
 
-    emulator = ImgEmulator(area_size*um, npoints,
-                           wl*um, imgs_number=3000,
-                           init_field_gen=ifgen,
-                           init_gen_args=(radius*um,),
-                           iprofiles_gen=generate_beams,
-                           iprofiles_gen_args=(
-                               modes, modes_matrix_t,
-                               modes_matrix_dot_t, fiber_matrix,
-                           ),
-                           object_gen=rectangle_hole,
-                           object_gen_args=(10*um, 40*um),
-                           use_gpu=0,
-                           z_obj=10*um
-                           )
+    emulator = GIEmulator(area_size*um, npoints,
+                          wl*um, imgs_number=3000,
+                          init_field_gen=ifgen,
+                          init_gen_args=(radius*um,),
+                          iprofiles_gen=generate_beams,
+                          iprofiles_gen_args=(
+                              modes, modes_matrix_t,
+                              modes_matrix_dot_t, fiber_matrix,
+                          ),
+                          object_gen=rectangle_hole,
+                          object_gen_args=(10*um, 40*um),
+                          use_gpu=0,
+                          z_obj=10*um
+                          )
 
     emulator.calculate_ghostimage()
     emulator.calculate_xycorr()
