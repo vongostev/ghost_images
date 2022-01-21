@@ -10,6 +10,7 @@ import sys
 import time
 import numpy as np
 from functools import cached_property
+from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -341,7 +342,8 @@ class ObjRefGenerator:
         img_paths = get_images(self.settings.DIR, self.settings)
         data_list = Parallel(n_jobs=self.njobs, backend='threading')(
             delayed(get_objref_imgcrop)(path, self.settings)
-            for i, path in enumerate(img_paths))
+            for i, path in tqdm(enumerate(img_paths)))
+        print()
         ref_data_list, obj_data_list = zip(*data_list)
         self.ref_data = np.array(ref_data_list)
         self.obj_data = np.array(obj_data_list)
@@ -356,7 +358,8 @@ class ObjRefGenerator:
         img_paths = zip(ref_img_paths, obj_img_paths)
         data_list = Parallel(n_jobs=self.njobs, backend='threading')(
             delayed(get_objref_twoimgs)(*path, self.settings)
-            for i, path in enumerate(img_paths))
+            for i, path in tqdm(enumerate(img_paths)))
+        print()
         ref_data_list, obj_data_list = zip(*data_list)
         self.ref_data = np.array(ref_data_list)
         self.obj_data = np.array(obj_data_list)
@@ -370,7 +373,8 @@ class ObjRefGenerator:
         ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
         ref_data_list = Parallel(n_jobs=self.njobs, backend='threading')(
             delayed(get_ref_imgnum)(path, self.settings)
-            for i, path in enumerate(ref_img_paths))
+            for i, path in tqdm(enumerate(ref_img_paths)))
+        print()
         self.ref_data = np.array(ref_data_list)
         obj_file_name_split = self.settings.OBJ_FILE.split('.')
         ext = obj_file_name_split[-1]
@@ -408,7 +412,8 @@ class GIExpDataProcessor:
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
         self.obj_data = np.zeros(self.imgs_number)
-        self.ref_data = np.zeros((self.imgs_number, self.Ny, self.Nx), dtype=np.uint8)
+        self.ref_data = np.zeros((self.imgs_number, self.Ny, self.Nx),
+                                 dtype=np.uint8)
         self.gi = np.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         self.sc = np.zeros((self.Ny, self.Nx), dtype=np.float32)
@@ -530,8 +535,7 @@ class GIExpDataProcessor:
     def calculate_contrast(self):
         self.cd = (self.gi - np.mean(self.gi)) / self.gi
         self.cd[np.abs(self.cd) > 1] = 0
-        log.info(
-            'Ghost image contrast calculated')
+        log.info('Ghost image contrast calculated')
 
     def calculate_all(self):
         self.calculate_ghostimage()

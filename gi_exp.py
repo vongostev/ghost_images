@@ -17,11 +17,11 @@ settings_file -- путь к файлу с настройками экспери
 settings_file = r'H:\SciData\GI\211221_computational\ghost_proector_12_15_scatt.txt'
 
 analyser = GIExpDataProcessor(settings_file, n_images=1000, parallel_njobs=-1,
-                       parallel_reading=1, binning_order=10, fast_corr=1)
-# analyser.calculate_all()
-analyser.calculate_ghostimage()
+                       parallel_reading=0, binning_order=5)
+analyser.calculate_all()
+# analyser.calculate_ghostimage()
 # analyser.calculate_contrast()
-analyser.calculate_xycorr()
+# analyser.calculate_xycorr()
 # analyser.calculate_timecorr()
 # analyser.calculate_xycorr_widths(nx=5, ny=5)
 # print(analyser.information)
