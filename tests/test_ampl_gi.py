@@ -9,7 +9,7 @@ from gi import GIEmulator
 from lightprop2d import Beam2D, rectangle_hole, random_wave
 import matplotlib.pyplot as plt
 
-npoints = 512
+npoints = 128
 wl0 = 0.632
 nimg = 1000
 area_size = 1000
@@ -19,10 +19,9 @@ test = GIEmulator(area_size, npoints, wl0, nimg,
                   init_gen_args=(4,),
                   object_gen=rectangle_hole,
                   object_gen_args=(500, 100),
-                  parallel_njobs=2,
+                  parallel_njobs=4,
                   use_gpu=True
                   )
-test.calculate_xycorr()
-
-plt.plot(test.xycorr_data[test.npoints // 2])
+test.calculate_all()
+plt.semilogy(test.xycorr_data[test.npoints // 2])
 plt.show()

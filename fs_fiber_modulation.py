@@ -6,11 +6,10 @@ Created on Mon Dec 27 14:22:29 2021
 """
 import __init__
 import numpy as np
-from lightprop2d import Beam2D, um, cm, rectangle_hole, gaussian_beam
+from lightprop2d import Beam2D, um, cm, rectangle_hole, gaussian_beam, round_hole
 
 import matplotlib.pyplot as plt
 from gi.emulation import GIEmulator
-import numba as nb
 import cupy as cp
 
 npoints = 1024
@@ -46,39 +45,42 @@ def get_builders(area_size, npoints, a: float = 1.,
 
 def random_fbundle(X, Y, cores_num, cores_coords, core_radius, method='a'):
     if method == 'a':
-        amplitudes = cp.random.randint(
-            0, 256, size=(cores_num,)).astype(np.float64)
+        amplitudes = cp.random.uniform(
+            0, 1, size=(cores_num,), dtype=np.float32)
         phases = cp.zeros(cores_num)
     elif method == 'p':
         amplitudes = cp.ones(cores_num)
-        phases = cp.random.uniform(0, 2*np.pi, size=(cores_num,))
+        phases = cp.random.uniform(0, 2*np.pi, size=(cores_num,), dtype=np.float32)
     elif method == 'ap':
-        amplitudes = cp.random.randint(
-            0, 256, size=(cores_num,)).astype(np.float64)
-        phases = cp.random.uniform(0, 2*np.pi, size=(cores_num,))
+        amplitudes = cp.random.uniform(
+            0, 1, size=(cores_num,), dtype=np.float32)
+        phases = cp.random.uniform(0, np.pi, size=(cores_num,), dtype=np.float32)
 
     n = cp.zeros((X.size, Y.size), dtype=np.complex128)
     k = 0
     _n = X.size // 2
-    _nh = _n // 4
+    _nh = _n // 32
+    x = X[_n - _nh:_n + _nh]
+    y = Y[_n - _nh:_n + _nh]
     gaussian = gaussian_beam(
-        X[_n - _nh:_n + _nh],
-        Y[_n - _nh:_n + _nh], 1, core_radius / 4)
+        x, y, 1, core_radius / 4) * round_hole(x, y, core_radius)
+    gauss_profiles = cp.tensordot(
+        amplitudes * cp.exp(1j * phases), gaussian, axes=0)
+    gauss_profiles = gauss_profiles.reshape((cores_num, 2 * _nh, 2 * _nh))
 
     for indxs in cores_coords:
         i, j = indxs
-        n[i - _nh:i + _nh, j - _nh:j + _nh] += amplitudes[k] * \
-            np.exp(1j * phases[k]) * gaussian
+        n[i - _nh:i + _nh, j - _nh:j + _nh] += gauss_profiles[k]
         k += 1
 
     return n
 
 
-z_refs = [0]
+z_refs = [0, 100, 250, 500]
 simdata = {}
 
 nimgs = [1000]
-methods = ['a']
+methods = ['ap']
 
 
 if __name__ == "__main__":
@@ -105,9 +107,8 @@ if __name__ == "__main__":
                                   z_ref=z,
                                   object_gen=rectangle_hole,
                                   object_gen_args=(50, 200),
-                                  parallel_njobs=1,
-                                  use_gpu=True,
-                                  fast_corr=False)
+                                  parallel_njobs=4,
+                                  use_gpu=True)
                 test.calculate_xycorr()
                 test.calculate_ghostimage()
 
@@ -126,4 +127,6 @@ if __name__ == "__main__":
                 simdata[method][z][nimg]['cs'] = test.xycorr_data
                 simdata[method][z][nimg]['gi'] = test.ghost_data
 
-    # np.savez_compressed('fs_simdata_190121_a', **simdata)
+                del test
+
+    # np.savez_compressed('fs_simdata_200121', **simdata)

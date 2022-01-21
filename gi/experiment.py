@@ -257,46 +257,15 @@ def get_ref_imgnum(ref_path: str, settings: GISettings):
     return imread(ref_path, settings.BINNING, settings.REF_CROP)
 
 
-def data_correlation(obj_data: np.ndarray, ref_data: np.ndarray,
-                     parallel_njobs: int = -1, fast: bool = True):
-    """
-
-
-    Parameters
-    ----------
-    obj_data : np.ndarray
-        DESCRIPTION.
-    ref_data : np.ndarray
-        DESCRIPTION.
-    parallel_njobs : int, optional
-        DESCRIPTION. The default is -1.
-    fast : bool, optional
-        DESCRIPTION. The default is True.
-
-    Returns
-    -------
-    TYPE
-        DESCRIPTION.
-
-    """
-    if fast:
-        log.info(
-            'Compute correlation function fast using `np.tensordot`')
-        return np.tensordot(obj_data - obj_data.mean(),
-                            ref_data - ref_data.mean(axis=0),
-                            axes=1) / obj_data.size
-
+def data_correlation(obj_data: np.ndarray, ref_data: np.ndarray):
     log.info(
-        'Compute correlation function slow but exact using `np.corrcoef`')
-
-    def gi(pixel_data):
-        return np.nan_to_num(np.corrcoef(obj_data, pixel_data))[0, 1]
-
-    img_shape = ref_data.shape[1:]
-    ref_data = ref_data.reshape(ref_data.shape[0], -1).T
-    corr_data = Parallel(n_jobs=parallel_njobs)(
-        delayed(gi)(s) for s in ref_data)
-    return np.asarray(corr_data).reshape(img_shape)
+        'Compute correlation function fast using `np.einsum`')
+    od = obj_data - obj_data.mean()
+    rd = ref_data - ref_data.mean(axis=0)
+    s1 = np.einsum('i,ijk->jk', od, rd)
+    s2 = np.linalg.norm(od) * np.linalg.norm(rd, axis=0)
+    r = np.nan_to_num(s1 / s2)
+    return r
 
 
 def FWHM(n, data1d):
@@ -326,8 +295,7 @@ def xycorr(self, p, w):
     tx = min(x + w // 2, self.Nx)
     ty = min(y + w // 2, self.Ny)
     point_data = self.ref_data[:, y, x]
-    sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx],
-                          self.parallel_njobs, self.fast_corr)
+    sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
     return xycorr_width(sc)
 
 
@@ -423,25 +391,24 @@ class GIExpDataProcessor:
 
     def __init__(self, settings_file: str, binning_order: int = 1,
                  n_images: int = 0, parallel_njobs: int = -1,
-                 parallel_reading: bool = True, fast_corr: bool = True):
+                 parallel_reading: bool = True):
 
         self.parallel_njobs = parallel_njobs
         self.settings = GISettings(settings_file)
         self.settings.BINNING = binning_order
-        self.fast_corr = fast_corr
         if n_images:
             self.settings.N = n_images
 
         log.info('Experiment settings:\n' + json.dumps(
             self.settings.__dict__, indent=4)[2:-2])
 
-        self.N = self.settings.N
+        self.imgs_number = self.settings.N
         self.Ny, self.Nx = (crop_shape(
             self.settings.REF_CROP) // binning_order).astype(int)
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
-        self.obj_data = np.zeros(self.N)
-        self.ref_data = np.zeros((self.N, self.Ny, self.Nx), dtype=np.uint8)
+        self.obj_data = np.zeros(self.imgs_number)
+        self.ref_data = np.zeros((self.imgs_number, self.Ny, self.Nx), dtype=np.uint8)
         self.gi = np.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         self.sc = np.zeros((self.Ny, self.Nx), dtype=np.float32)
@@ -472,23 +439,14 @@ class GIExpDataProcessor:
         if data_start is None:
             data_start = 0
         if data_end is None:
-            data_end = self.N
+            data_end = self.imgs_number
         log.info('Calculating ghost image')
         t = time.time()
 
         self.gi = data_correlation(self.obj_data[data_start:data_end],
-                                   self.ref_data[data_start:data_end],
-                                   self.parallel_njobs, self.fast_corr)
+                                   self.ref_data[data_start:data_end])
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
-
-    @property
-    def diff(self):
-        '''
-        Расчет разности между последовательностями
-        объектных и референсных изображений
-        '''
-        return np.mean(self.ref_data, axis=0)
 
     def calculate_xycorr(self, x=0, y=0):
         '''
@@ -502,8 +460,7 @@ class GIExpDataProcessor:
         if y == 0:
             y = self.Ny // 2
         point_data = self.ref_data[:, y, x]
-        self.sc = data_correlation(point_data, self.ref_data,
-                                   self.parallel_njobs, self.fast_corr)
+        self.sc = data_correlation(point_data, self.ref_data)
         log.info(
             f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -562,7 +519,7 @@ class GIExpDataProcessor:
             return np.nan_to_num(np.corrcoef(data[:-i], data[i:])[0, 1])
 
         rdim = self.Nx * self.Ny // 2
-        ravel_data = self.ref_data.reshape((self.N, -1))
+        ravel_data = self.ref_data.reshape((self.imgs_number, -1))
         ravel_data = ravel_data[:, rdim - npoints // 2: rdim + npoints // 2]
         self.tc[1:] = np.mean([np.apply_along_axis(cf1d, 1, ravel_data, i)
                                for i in range(1, self.settings.TCPOINTS)],
@@ -573,6 +530,8 @@ class GIExpDataProcessor:
     def calculate_contrast(self):
         self.cd = (self.gi - np.mean(self.gi)) / self.gi
         self.cd[np.abs(self.cd) > 1] = 0
+        log.info(
+            'Ghost image contrast calculated')
 
     def calculate_all(self):
         self.calculate_ghostimage()
