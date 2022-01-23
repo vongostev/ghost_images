@@ -31,20 +31,24 @@ def generate_beams(area_size, npoints, wl,
                    object_gen, object_gen_args,
                    z_obj, z_ref, use_gpu, *args, **kwargs):
 
-    obj = Beam2D(area_size, npoints, wl,
+    ref = Beam2D(area_size, npoints, wl,
                  init_field=init_field,
                  init_field_gen=init_field_gen,
-                 init_gen_args=init_gen_args, use_gpu=use_gpu)
-    ref = Beam2D(area_size, npoints, wl, init_field=obj.field, use_gpu=use_gpu)
-
+                 init_gen_args=init_gen_args, use_gpu=use_gpu,
+                 complex_bits=64)
+    obj = Beam2D(area_size, npoints, wl, init_field=ref.field.copy(),
+                 init_spectrum=ref.spectrum.copy(), use_gpu=use_gpu,
+                 complex_bits=64)
     if object_gen is not None:
         obj.coordinate_filter(
             f_gen=lambda x, y: object_gen(x, y, *object_gen_args))
 
     obj.propagate(z_obj)
     ref.propagate(z_ref)
-    refprofile = (ref.iprofile / np.max(ref.iprofile) * 255).astype(np.uint8)
-    objprofile = (obj.iprofile / np.max(obj.iprofile) * 255).astype(np.uint8)
+    #
+    refprofile = (ref.iprofile)# / np.max(ref.iprofile) * 255).astype(np.uint8)
+    #
+    objprofile = (obj.iprofile)# / np.max(obj.iprofile) * 255).astype(np.uint8)
 
     return refprofile, objprofile
 
@@ -118,7 +122,7 @@ class GIEmulator(GIExpDataProcessor):
     parallel_njobs: int = 4
     suppress_log: bool = False
     log_file: str = ''
-    
+
     def __post_init__(self):
         """
         Клаcс предназначен для эмуляции эксперимента
@@ -127,7 +131,7 @@ class GIEmulator(GIExpDataProcessor):
         """
 
         self.data = np.empty(self.imgs_number,
-                             dtype=[('ref', 'O'), ('obj', '<i4')])
+                             dtype=[('ref', 'O'), ('obj', np.float32)])
 
         """
         Здесь создается список объектных и референсных изображений
@@ -158,7 +162,6 @@ class GIEmulator(GIExpDataProcessor):
                 self.data[:] = Parallel(n_jobs=self.parallel_njobs,
                                         backend="threading")(
                     delayed(generate_data)(self) for _ in tqdm(range(self.imgs_number)))
-
         self.obj_data = self.data['obj']
         self.ref_data = np.stack(self.data['ref'])
         log.info(
@@ -167,7 +170,7 @@ class GIEmulator(GIExpDataProcessor):
         self.sc = np.zeros_like(self.ref_data[0])
         self.Nx = self.Ny = self.ghost_data.shape[0]
 
-        del self.data
+        self.data = None
 
     def calculate_timecorr(self, npoints=100):
         log.warn('Time correlation function is not implemented in the simulation')

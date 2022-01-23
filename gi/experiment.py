@@ -260,7 +260,7 @@ def get_ref_imgnum(ref_path: str, settings: GISettings):
 
 def data_correlation(obj_data: np.ndarray, ref_data: np.ndarray):
     log.info(
-        'Compute correlation function fast using `np.einsum`')
+        'Compute correlation function using `np.einsum`')
     od = obj_data - obj_data.mean()
     rd = ref_data - ref_data.mean(axis=0)
     s1 = np.einsum('i,ijk->jk', od, rd)

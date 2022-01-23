@@ -19,7 +19,7 @@ test = GIEmulator(area_size, npoints, wl0, nimg,
                   init_gen_args=(4,),
                   object_gen=rectangle_hole,
                   object_gen_args=(500, 100),
-                  parallel_njobs=4,
+                  parallel_njobs=1,
                   use_gpu=True
                   )
 test.calculate_all()

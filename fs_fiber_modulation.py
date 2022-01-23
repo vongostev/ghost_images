@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 from gi.emulation import GIEmulator
 import cupy as cp
 
-npoints = 1024
-area_size = 400
+npoints = 400
+area_size = 130
 wl0 = 0.632
 
 
@@ -40,46 +40,48 @@ def get_builders(area_size, npoints, a: float = 1.,
         for t in _a] for r, _a in zip(pos_radiuses, pos_angles)]
     cores_coords = sum(cores_coords, [])
     # cores_radiuses = [central_core_radius] + [a] * (len(cores_coords) - 1)
-    return np.array(cores_coords), a
+    return np.unique(cores_coords, axis=0), a
 
 
-def random_fbundle(X, Y, cores_num, cores_coords, core_radius, method='a'):
+def random_fbundle(X, Y, cores_num, cores_coords, core_radius, method='a', backend=cp):
     if method == 'a':
-        amplitudes = cp.random.uniform(
-            0, 1, size=(cores_num,), dtype=np.float32)
-        phases = cp.zeros(cores_num)
+        amplitudes = backend.random.uniform(
+            0, 1, size=(cores_num,))  # , dtype=np.float32)
+        phases = backend.zeros(cores_num)
     elif method == 'p':
-        amplitudes = cp.ones(cores_num)
-        phases = cp.random.uniform(0, 2*np.pi, size=(cores_num,), dtype=np.float32)
+        amplitudes = 1.
+        phases = backend.random.uniform(
+            0, np.pi, size=(cores_num,))  # , dtype=np.float32)
     elif method == 'ap':
-        amplitudes = cp.random.uniform(
-            0, 1, size=(cores_num,), dtype=np.float32)
-        phases = cp.random.uniform(0, np.pi, size=(cores_num,), dtype=np.float32)
-
-    n = cp.zeros((X.size, Y.size), dtype=np.complex128)
+        amplitudes = backend.random.uniform(
+            0, 1, size=(cores_num,))#, dtype=np.float32)
+        phases = backend.random.uniform(
+            0, np.pi, size=(cores_num,))  # , dtype=np.float32)
+    else:
+        raise ValueError(f'Unknowm method `{method}`')
+    n = backend.zeros((X.size, Y.size), dtype=np.complex128)
     k = 0
     _n = X.size // 2
-    _nh = _n // 32
+    _nh = 16
     x = X[_n - _nh:_n + _nh]
     y = Y[_n - _nh:_n + _nh]
     gaussian = gaussian_beam(
-        x, y, 1, core_radius / 4) * round_hole(x, y, core_radius)
-    gauss_profiles = cp.tensordot(
-        amplitudes * cp.exp(1j * phases), gaussian, axes=0)
+        x, y, 1, 0.5829260426150318) * round_hole(x, y, core_radius * 1.5)
+    mod = amplitudes * backend.exp(1j * phases)
+    # mod[backend.abs(mod) ** 2 > 1] = 1
+    gauss_profiles = backend.tensordot(mod, gaussian, axes=0)
     gauss_profiles = gauss_profiles.reshape((cores_num, 2 * _nh, 2 * _nh))
-
     for indxs in cores_coords:
         i, j = indxs
         n[i - _nh:i + _nh, j - _nh:j + _nh] += gauss_profiles[k]
         k += 1
-
     return n
 
 
-z_refs = [0, 100, 250, 500]
+z_refs = [500]
 simdata = {}
 
-nimgs = [1000]
+nimgs = [5000]
 methods = ['ap']
 
 
@@ -87,11 +89,11 @@ if __name__ == "__main__":
     builders = get_builders(
         area_size,
         npoints,
-        a=4.2,
+        a=2,
         core_pitch=0.1,
         dims=6,
-        layers=16,
-        central_core_radius=4.2)
+        layers=14,
+        central_core_radius=2)
 
     cores_num = len(builders[0])
 
@@ -103,11 +105,12 @@ if __name__ == "__main__":
                 simdata[method][z][nimg] = {}
                 test = GIEmulator(area_size, npoints, wl0, nimg,
                                   init_field_gen=random_fbundle,
-                                  init_gen_args=(cores_num, *builders),
+                                  init_gen_args=(
+                                      cores_num, *builders, method, cp),
                                   z_ref=z,
                                   object_gen=rectangle_hole,
                                   object_gen_args=(50, 200),
-                                  parallel_njobs=4,
+                                  parallel_njobs=2,
                                   use_gpu=True)
                 test.calculate_xycorr()
                 test.calculate_ghostimage()
@@ -127,6 +130,6 @@ if __name__ == "__main__":
                 simdata[method][z][nimg]['cs'] = test.xycorr_data
                 simdata[method][z][nimg]['gi'] = test.ghost_data
 
-                del test
+                # del test
 
     # np.savez_compressed('fs_simdata_200121', **simdata)
