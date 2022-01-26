@@ -12,9 +12,9 @@ import matplotlib.pyplot as plt
 from gi.emulation import GIEmulator
 import cupy as cp
 
-npoints = 400
-area_size = 130
-wl0 = 0.632
+npoints = 512
+area_size = 150
+wl0 = 0.532
 
 
 def get_builders(area_size, npoints, a: float = 1.,
@@ -46,27 +46,27 @@ def get_builders(area_size, npoints, a: float = 1.,
 def random_fbundle(X, Y, cores_num, cores_coords, core_radius, method='a', backend=cp):
     if method == 'a':
         amplitudes = backend.random.uniform(
-            0, 1, size=(cores_num,))  # , dtype=np.float32)
+            0, 1, size=(cores_num,), dtype=np.float32)
         phases = backend.zeros(cores_num)
     elif method == 'p':
         amplitudes = 1.
         phases = backend.random.uniform(
-            0, np.pi, size=(cores_num,))  # , dtype=np.float32)
+            0, np.pi, size=(cores_num,), dtype=np.float32)
     elif method == 'ap':
         amplitudes = backend.random.uniform(
-            0, 1, size=(cores_num,))#, dtype=np.float32)
+            0, 1, size=(cores_num,), dtype=np.float32)
         phases = backend.random.uniform(
-            0, np.pi, size=(cores_num,))  # , dtype=np.float32)
+            0, np.pi, size=(cores_num,), dtype=np.float32)
     else:
         raise ValueError(f'Unknowm method `{method}`')
-    n = backend.zeros((X.size, Y.size), dtype=np.complex128)
+    n = backend.zeros((X.size, Y.size), dtype=np.complex64)
     k = 0
     _n = X.size // 2
-    _nh = 16
+    _nh = 32
     x = X[_n - _nh:_n + _nh]
     y = Y[_n - _nh:_n + _nh]
     gaussian = gaussian_beam(
-        x, y, 1, 0.5829260426150318) * round_hole(x, y, core_radius * 1.5)
+        x, y, 1, 0.5829260426150318) * round_hole(x, y, 1.5 * core_radius)
     mod = amplitudes * backend.exp(1j * phases)
     # mod[backend.abs(mod) ** 2 > 1] = 1
     gauss_profiles = backend.tensordot(mod, gaussian, axes=0)
@@ -78,22 +78,22 @@ def random_fbundle(X, Y, cores_num, cores_coords, core_radius, method='a', backe
     return n
 
 
-z_refs = [500]
+z_refs = [0]
 simdata = {}
 
-nimgs = [5000]
-methods = ['ap']
+nimgs = [100]
+methods = ['a']
 
 
 if __name__ == "__main__":
     builders = get_builders(
         area_size,
         npoints,
-        a=2,
-        core_pitch=0.1,
+        a=1.5,
+        core_pitch=0.5,
         dims=6,
         layers=14,
-        central_core_radius=2)
+        central_core_radius=1.5)
 
     cores_num = len(builders[0])
 
@@ -109,14 +109,17 @@ if __name__ == "__main__":
                                       cores_num, *builders, method, cp),
                                   z_ref=z,
                                   object_gen=rectangle_hole,
-                                  object_gen_args=(50, 200),
-                                  parallel_njobs=2,
-                                  use_gpu=True)
-                test.calculate_xycorr()
-                test.calculate_ghostimage()
+                                  object_gen_args=(40, 40),
+                                  parallel_njobs=1,
+                                  use_gpu=True,
+                                  use_cupy=True)
+                test.calculate_timecorr()
+                # test.calculate_xycorr()
+                # test.calculate_xycorr_widths(nx=50, ny=50, window_points=10)
+                # test.calculate_ghostimage()
 
                 fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-                axes[0].imshow(test.ref_data[0])
+                axes[0].imshow(test.ref_data[0].get())
                 axes[0].set_title(f'Intensity Profile on z={z} um')
                 axes[1].imshow(test.xycorr_data)
                 axes[1].set_title(f'CorrFun on z={z} um')
