@@ -221,10 +221,9 @@ def get_objref_twoimgs(ref_obj_paths: list, settings: GISettings):
 
     Parameters
     ----------
-    ref_path : str
-        Path to a directory containing reference channel images.
-    obj_path : str
-        Path to a directory containing objective channel images.
+    ref_obj_paths : list(str, str)
+        ref_obj_paths[0] <-> Path to a directory containing reference channel images.
+        ref_obj_paths[1] <-> Path to a directory containing objective channel images.
     settings : GISettings
         Parsed settings of the experiment.
 
@@ -275,52 +274,79 @@ def get_ref_imgnum(ref_path: str, settings: GISettings):
     return imread(ref_path, settings.BINNING, settings.REF_CROP)
 
 
-def data_correlation(obj_data: np.ndarray, ref_data: np.ndarray):
-    backend = getbackend(obj_data)
+def autocorr1d(data, i, backend=None):
+    if backend is None:
+        backend = getbackend(data)
+    obj_data = data[:-i]
+    ref_data = data[i:]
+    od = obj_data - obj_data.mean()
+    rd = ref_data - ref_data.mean()
+    s1 = (od * rd).sum()
+    s2 = backend.linalg.norm(od) * backend.linalg.norm(rd)
+    return backend.nan_to_num(s1 / s2)
+
+
+def corr1d3d(obj_data, ref_data, backend=None):
+    if backend is None:
+        backend = getbackend(obj_data)
     log.debug(
         'Compute correlation function using `np.einsum`')
     od = obj_data - obj_data.mean()
     rd = ref_data - ref_data.mean(axis=0)
     s1 = backend.einsum('i,ijk->jk', od, rd)
     s2 = backend.linalg.norm(od) * backend.linalg.norm(rd, axis=0)
-    return np.nan_to_num(s1 / s2)
+    return backend.nan_to_num(s1 / s2)
 
 
-def FWHM(data1d, backend=None):
+def corr3d3d(obj_data_3d, ref_data, backend=None):
+    if backend is None:
+        backend = getbackend(obj_data_3d)
+    log.debug(
+        'Compute correlation function using `np.einsum`')
+    od = obj_data_3d - obj_data_3d.mean(axis=0)
+    rd = ref_data - ref_data.mean(axis=0)
+    s1 = backend.einsum('inm,ijk->nmjk', od, rd)
+    s2 = backend.linalg.norm(od, axis=0) * backend.linalg.norm(rd, axis=0)
+    return backend.nan_to_num(s1 / s2)
+
+
+def FWHM(data1d, Xc=None, backend=None):
     if backend is None:
         backend = getbackend(data1d)
-    X = backend.arange(data1d.size)
-    Xc = backend.average(X, weights=data1d)
-    return backend.sqrt(
-        backend.average((X - Xc) ** 2, weights=data1d)).tolist() * 4
+    return backend.sum(data1d > 0.5)
 
 
-def xycorr_width(sc):
-    backend = getbackend(sc)
-    ny, nx = sc.shape
-    Yc, Xc = np.unravel_index(np.argmax(sc), sc.shape)
-
-    xslice = sc[Yc, :]
-    threshold = 0.5
-    xslice[xslice < threshold] = 0
-    yslice = sc[:, Xc]
-    threshold = 0.5
-    yslice[yslice < threshold] = 0
-    return FWHM(xslice, backend), FWHM(yslice, backend)
+def xycorr_width(sc, p=None, backend=None):
+    if backend is None:
+        backend = getbackend(sc)
+    sc[sc < 0.5] = 0
+    if backend.all(sc == 0):
+        return backend.asarray([np.nan, np.nan])
+    if p is None:
+        ny, nx = sc.shape
+        # Calculate centroid
+        Y, X = backend.mgrid[-ny // 2:ny // 2, -nx // 2:nx // 2]
+        Xc = int(backend.average(X, weights=sc)) + nx // 2
+        Yc = int(backend.average(Y, weights=sc)) + ny // 2
+    else:
+        Yc, Xc = p
+    xslice = sc[:, Xc]
+    yslice = sc[Yc]
+    return backend.asarray(
+        [FWHM(xslice, Xc, backend), FWHM(yslice, Yc, backend)])
 
 
 @wrap_non_picklable_objects
 def xycorr(self, p, w):
-    x, y = p
+    y, x = p
     lx = max(x - w // 2, 0)
     ly = max(y - w // 2, 0)
     tx = min(x + w // 2, self.Nx)
     ty = min(y + w // 2, self.Ny)
-    point_data = self.ref_data[:, y, x]
-    sc = data_correlation(point_data, self.ref_data[:, ly:ty, lx:tx])
-    if self.xp.all(sc == 0):
-        return np.nan, np.nan
-    return xycorr_width(sc)
+    sc = corr1d3d(
+        self.ref_data[:, y, x],
+        self.ref_data[:, ly:ty, lx:tx])
+    return xycorr_width(sc, backend=self.xp)
 
 
 class ObjRefGenerator:
@@ -504,24 +530,28 @@ class GIExpDataProcessor:
         log.info('Calculating ghost image')
         t = time.time()
 
-        self.gi = data_correlation(self.obj_data[data_start:data_end],
-                                   self.ref_data[data_start:data_end])
+        self.gi = corr1d3d(self.obj_data[data_start:data_end],
+                           self.ref_data[data_start:data_end])
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
 
-    def calculate_xycorr(self, x=0, y=0):
+    def calculate_xycorr(self, x=0, y=0, window_points: int = None):
         '''
         Расчет функции когерентности или поперечной корреляции
         '''
         log.info('Calculating spatial correlation function')
         t = time.time()
 
+        w = window_points
+
         if x == 0:
             x = self.Nx // 2
         if y == 0:
             y = self.Ny // 2
+        self.sc_point = (y, x)
         point_data = self.ref_data[:, y, x]
-        self.sc = data_correlation(point_data, self.ref_data)
+        self.sc = corr1d3d(
+            point_data, self.ref_data if w is None else self.ref_data[:, y-w:y+w, x-w:x+w])
         log.info(
             f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -555,38 +585,31 @@ class GIExpDataProcessor:
         log.info(
             'Calculating spatial correlation function width in different pixels')
         t = time.time()
+        self.sc_widths = self.xp.empty((nx * ny, 2))
         points = self.xp.mgrid[
             (self.Nx - nx) // 2:(self.Nx + nx) // 2,
             (self.Ny - ny) // 2:(self.Ny + ny) // 2].T.reshape((-1, 2))
-        _rawd = self.xp.asarray(
-            [xycorr(self, p, window_points) for p in points])
-        self.sc_widths = _rawd.swapaxes(1, 0).reshape((2, ny, nx))
+        for i, p in tqdm(enumerate(points)):
+            self.sc_widths[i] = xycorr(self, p, window_points)
+        print()
+        self.sc_widths = self.sc_widths.swapaxes(1, 0).reshape((2, ny, nx))
         log.info(
             f'Spatial correlation function widths calculated. Elapsed time {(time.time() - t):.3f} s')
 
-    def calculate_timecorr(self, npoints=100, tcpoints=10):
+    def calculate_timecorr(self, tcpoints=None):
         log.info('Calculating time correlation function')
         t = time.time()
 
-        try:
-            tcpoints = self.settings.TCPOINTS
-        except:
-            pass
+        if tcpoints is None:
+            if hasattr(self, "settings"):
+                tcpoints = self.settings.TCPOINTS
+            else:
+                raise ValueError('Number of time correlation points is undefined.' +
+                                 f'Please set {type(self).__name__}.settings.TCPOINTS or `tcpoints` argument')
 
-        def cf1d(i, data):
-            obj_data = data[:-i]
-            ref_data = data[i:]
-            od = obj_data - obj_data.mean()
-            rd = ref_data - ref_data.mean()
-            s1 = (od * rd).sum()
-            s2 = self.xp.linalg.norm(od) * self.xp.linalg.norm(rd)
-            return self.xp.nan_to_num(s1 / s2)
-
-        rdim = self.Nx * self.Ny // 2
         ravel_data = self.ref_data.mean(axis=(1, 2))
-
         self.tc[1:] = self.xp.array(
-            [cf1d(i, ravel_data) for i in self.xp.arange(1, tcpoints)])
+            [autocorr1d(ravel_data, i, self.xp) for i in self.xp.arange(1, tcpoints)])
         log.info(
             f'Time correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -611,7 +634,7 @@ class GIExpDataProcessor:
     def g2_data(self):
         return self._np(self._g2)
 
-    @property
+    @cached_property
     def g2(self):
         return self._g2.mean()
 
@@ -635,16 +658,16 @@ class GIExpDataProcessor:
     def contrast_data(self):
         return self._np(self.cd)
 
-    @property
+    @cached_property
     def contrast(self):
-        return np.mean(self.contrast_data)
+        return self.contrast_data.mean()
 
-    @property
+    @cached_property
     def xycorr_width(self):
         if self.sc_widths is None:
-            return xycorr_width(self.xycorr_data)
+            return xycorr_width(self.xycorr_data, self.sc_point, self.xp)
         else:
-            return self.sc_widths[self.xp.isnan(self.sc_widths) == 0].mean()
+            return self.sc_widths[self.sc_widths > 0].reshape((2, -1)).mean(axis=1)
 
     @cached_property
     def timecorr_width(self):

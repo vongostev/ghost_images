@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 from gi.emulation import GIEmulator
 import cupy as cp
 
-npoints = 512
-area_size = 150
+npoints = 1024
+area_size = 120
 wl0 = 0.532
 
 
@@ -59,22 +59,28 @@ def random_fbundle(X, Y, cores_num, cores_coords, core_radius, method='a', backe
             0, np.pi, size=(cores_num,), dtype=np.float32)
     else:
         raise ValueError(f'Unknowm method `{method}`')
-    n = backend.zeros((X.size, Y.size), dtype=np.complex64)
-    k = 0
+    n = backend.random.uniform(
+        0, 1e-5, (X.size, Y.size), dtype=backend.float32)
+    n = n.astype(backend.complex64)
+
     _n = X.size // 2
     _nh = 32
     x = X[_n - _nh:_n + _nh]
     y = Y[_n - _nh:_n + _nh]
     gaussian = gaussian_beam(
-        x, y, 1, 0.5829260426150318) * round_hole(x, y, 1.5 * core_radius)
-    mod = amplitudes * backend.exp(1j * phases)
-    # mod[backend.abs(mod) ** 2 > 1] = 1
+        x, y, 1, 0.5829260426150318) * round_hole(x, y, core_radius)
+    mod = amplitudes * (backend.cos(phases) + 1j * backend.sin(phases))
+
     gauss_profiles = backend.tensordot(mod, gaussian, axes=0)
     gauss_profiles = gauss_profiles.reshape((cores_num, 2 * _nh, 2 * _nh))
-    for indxs in cores_coords:
-        i, j = indxs
-        n[i - _nh:i + _nh, j - _nh:j + _nh] += gauss_profiles[k]
-        k += 1
+
+    lb = cores_coords - _nh
+    tb = cores_coords + _nh
+    for k, indx in enumerate(zip(lb, tb)):
+        lindx, tindx = indx
+        li, lj = lindx
+        ti, tj = tindx
+        n[li:ti, lj:tj] += gauss_profiles[k]
     return n
 
 
@@ -113,13 +119,12 @@ if __name__ == "__main__":
                                   parallel_njobs=1,
                                   use_gpu=True,
                                   use_cupy=True)
-                test.calculate_timecorr()
-                # test.calculate_xycorr()
-                # test.calculate_xycorr_widths(nx=50, ny=50, window_points=10)
-                # test.calculate_ghostimage()
+                # test.calculate_timecorr()
+                test.calculate_xycorr(window_points=128)
+                test.calculate_ghostimage()
 
                 fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-                axes[0].imshow(test.ref_data[0].get())
+                axes[0].imshow(test._np(test.ref_data[0]))
                 axes[0].set_title(f'Intensity Profile on z={z} um')
                 axes[1].imshow(test.xycorr_data)
                 axes[1].set_title(f'CorrFun on z={z} um')
@@ -132,6 +137,8 @@ if __name__ == "__main__":
                 simdata[method][z][nimg]['ip'] = test.ref_data[0]
                 simdata[method][z][nimg]['cs'] = test.xycorr_data
                 simdata[method][z][nimg]['gi'] = test.ghost_data
+
+                # test.calculate_xycorr_widths(nx=50, ny=50, window_points=128)
 
                 # del test
 

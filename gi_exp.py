@@ -16,8 +16,9 @@ settings_file -- путь к файлу с настройками экспери
 # settings_file = r'H:\SciData\GI\110921\110921.txt'
 settings_file = r'H:\SciData\GI\211221_computational\ghost_proector_12_15_scatt.txt'
 
-analyser = GIExpDataProcessor(settings_file, n_images=500, parallel_njobs=-2,
-                              parallel_reading=0, binning_order=5, use_cupy=True)
+analyser = GIExpDataProcessor(
+    settings_file, n_images=500, parallel_njobs=-2,
+    parallel_reading=1, binning_order=5, use_cupy=False)
 # analyser.calculate_all()
 # analyser.calculate_ghostimage()
 # analyser.calculate_contrast()
@@ -32,8 +33,8 @@ analyser.calculate_timecorr()
 # viewer.accumulate(analyser.ref_data[0])
 # viewer.show(1)
 
-# plt.plot(analyser.times, analyser.timecorr_data)
-# plt.show()
+plt.plot(analyser.times, analyser.timecorr_data)
+plt.show()
 # plt.imshow(analyser.ghost_data)
 # plt.show()
 
