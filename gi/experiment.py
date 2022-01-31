@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 import json
+from cv2 import resize, imread as cv2imread
 from skimage.transform import downscale_local_mean
-from skimage import io
 
 from joblib import Parallel, delayed, wrap_non_picklable_objects
 from logging import Logger, StreamHandler, Formatter
@@ -55,7 +55,9 @@ def getbackend(obj: object) -> ModuleType:
 
 
 def low_res(img, n):
-    return downscale_local_mean(img, (n, n))
+    x, y = img.shape
+    return resize(img, (y // n, x // n))
+    # return downscale_local_mean(img, (n, n))
 
 
 def crop(img, c):
@@ -67,7 +69,7 @@ def crop_shape(c):
 
 
 def imread(path, binning_order, crop_shape):
-    img = io.imread(path, 0)
+    img = cv2imread(path, 0)
     img = crop(img, crop_shape)
     if binning_order > 1:
         img = low_res(img, binning_order)
@@ -279,8 +281,8 @@ def autocorr1d(data, i, backend=None):
         backend = getbackend(data)
     obj_data = data[:-i]
     ref_data = data[i:]
-    od = obj_data - obj_data.mean()
-    rd = ref_data - ref_data.mean()
+    od = obj_data - obj_data.mean(dtype=backend.float32)
+    rd = ref_data - ref_data.mean(dtype=backend.float32)
     s1 = (od * rd).sum()
     s2 = backend.linalg.norm(od) * backend.linalg.norm(rd)
     return backend.nan_to_num(s1 / s2)
@@ -291,8 +293,8 @@ def corr1d3d(obj_data, ref_data, backend=None):
         backend = getbackend(obj_data)
     log.debug(
         'Compute correlation function using `np.einsum`')
-    od = obj_data - obj_data.mean()
-    rd = ref_data - ref_data.mean(axis=0)
+    od = obj_data - obj_data.mean(dtype=backend.float32)
+    rd = ref_data - ref_data.mean(axis=0, dtype=backend.float32)
     s1 = backend.einsum('i,ijk->jk', od, rd)
     s2 = backend.linalg.norm(od) * backend.linalg.norm(rd, axis=0)
     return backend.nan_to_num(s1 / s2)
@@ -303,8 +305,8 @@ def corr3d3d(obj_data_3d, ref_data, backend=None):
         backend = getbackend(obj_data_3d)
     log.debug(
         'Compute correlation function using `np.einsum`')
-    od = obj_data_3d - obj_data_3d.mean(axis=0)
-    rd = ref_data - ref_data.mean(axis=0)
+    od = obj_data_3d - obj_data_3d.mean(axis=0, dtype=backend.float32)
+    rd = ref_data - ref_data.mean(axis=0, dtype=backend.float32)
     s1 = backend.einsum('inm,ijk->nmjk', od, rd)
     s2 = backend.linalg.norm(od, axis=0) * backend.linalg.norm(rd, axis=0)
     return backend.nan_to_num(s1 / s2)
@@ -480,7 +482,7 @@ class GIExpDataProcessor:
         self.gi = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         self.sc = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
-        self.times = self.xp.linspace(
+        self.times = np.linspace(
             0, self.settings.TCPOINTS / self.settings.FREQ,
             self.settings.TCPOINTS)
         self.tc = self.xp.ones(self.settings.TCPOINTS)
@@ -683,7 +685,7 @@ class ImgViewer:
         '''
         if type(init) == str:
             self.path = init
-            self.data = [io.imread(self.path, 0)]
+            self.data = [cv2imread(self.path, 0)]
         elif type(init) == np.ndarray:
             self.path = 'generated_img'
             self.data = [np.abs(init)]
