@@ -26,12 +26,13 @@ test = GIEmulator(area_size, npoints, wl0, nimg,
                   )
 test.calculate_all()
 test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
+test.timecorr_data
+test.xycorr_data
+test.ghost_data
+test.xycorr_widths_data
+test.contrast_data
+test.g2_data
 print(test.g2)
-# print(test.timecorr_data)
-# print(test.xycorr_data)
-# print(test.ghost_data)
-# test.xycorr_widths_data
-# print(test.contrast_data)
 print(test.contrast)
 print(test.xycorr_width)
 print(test.timecorr_width)

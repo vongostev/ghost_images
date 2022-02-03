@@ -18,7 +18,7 @@ settings_file = r'H:\SciData\GI\211221_computational\ghost_proector_12_15_scatt.
 
 analyser = GIExpDataProcessor(
     settings_file, n_images=3000, parallel_njobs=-2,
-    parallel_reading=1, binning_order=5, use_cupy=False)
+    parallel_reading=1, binning_order=5, use_cupy=True)
 analyser.calculate_all()
 # analyser.calculate_ghostimage()
 # analyser.calculate_contrast()

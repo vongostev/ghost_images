@@ -607,8 +607,9 @@ class GIExpDataProcessor:
             if hasattr(self, "settings"):
                 tcpoints = self.settings.TCPOINTS
             else:
-                raise ValueError('Number of time correlation points is undefined.' +
-                                 f'Please set {type(self).__name__}.settings.TCPOINTS or `tcpoints` argument')
+                raise ValueError(
+                    'Number of time correlation points is undefined.' +
+                    f'Please set {type(self).__name__}.settings.TCPOINTS or `tcpoints` argument')
 
         ravel_data = self.ref_data.mean(axis=(1, 2))
         self.tc[1:] = self.xp.array(
@@ -670,7 +671,8 @@ class GIExpDataProcessor:
         if self.sc_widths is None:
             return xycorr_width(self.xycorr_data, self.sc_point, self.xp)
         else:
-            return self.sc_widths[self.sc_widths > 0].reshape((2, -1)).mean(axis=1)
+            return self.sc_widths[
+                self.sc_widths > 0].reshape((2, -1)).mean(axis=1)
 
     @cached_property
     def timecorr_width(self):
