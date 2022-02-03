@@ -18,7 +18,8 @@ from mpl_toolkits.mplot3d import Axes3D
 
 import json
 from cv2 import resize, imread as cv2imread
-from skimage.transform import downscale_local_mean
+# !!! TODO compare with cv2.resize
+# from skimage.transform import downscale_local_mean
 
 from joblib import Parallel, delayed, wrap_non_picklable_objects
 from logging import Logger, StreamHandler, Formatter

@@ -8,7 +8,7 @@ import __init__
 import numpy as np
 import matplotlib.pyplot as plt
 
-from lightprop2d import Beam2D, random_round_hole_phase, random_round_hole, rectangle_hole, um
+from lightprop2d import Beam2D, random_round_hole_phase, rectangle_hole, um
 from gi import GIEmulator
 from scipy.linalg import expm
 from joblib import Parallel, delayed

@@ -6,7 +6,7 @@ Created on Wed Jan 19 16:12:24 2022
 """
 import __init__
 from gi import GIEmulator
-from lightprop2d import Beam2D, rectangle_hole, random_wave, gaussian_beam
+from lightprop2d import rectangle_hole, random_wave
 
 import matplotlib.pyplot as plt
 

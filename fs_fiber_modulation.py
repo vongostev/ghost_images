@@ -6,7 +6,7 @@ Created on Mon Dec 27 14:22:29 2021
 """
 import __init__
 import numpy as np
-from lightprop2d import Beam2D, um, cm, rectangle_hole, gaussian_beam, round_hole
+from lightprop2d import rectangle_hole, gaussian_beam, round_hole
 
 import matplotlib.pyplot as plt
 from gi.emulation import GIEmulator
