@@ -592,7 +592,7 @@ class GIExpDataProcessor:
         points = self.xp.mgrid[
             (self.Nx - nx) // 2:(self.Nx + nx) // 2,
             (self.Ny - ny) // 2:(self.Ny + ny) // 2].T.reshape((-1, 2))
-        for i, p in tqdm(enumerate(points)):
+        for i, p in tqdm(enumerate(points), position=0, leave=True):
             self.sc_widths[i] = xycorr(self, p, window_points)
         print()
         self.sc_widths = self.sc_widths.swapaxes(1, 0).reshape((2, ny, nx))

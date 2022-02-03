@@ -14,7 +14,7 @@ import cupy as cp
 from collections import namedtuple
 
 from lightprop2d import Beam2D
-from .experiment import find_images, get_ref_imgnum, GIExpDataProcessor
+from .experiment import find_images, get_ref_imgnum, GIExpDataProcessor, crop_shape
 
 from logging import Logger, StreamHandler, Formatter
 
@@ -45,7 +45,10 @@ def generate_beams(area_size, npoints, wl,
     else:
         ref = cached_ref_obj['ref']
         ref.z = 0
-        field = init_field_gen(ref.X, ref.Y, *init_gen_args)
+        if init_field_gen is not None:
+            field = init_field_gen(ref.X, ref.Y, *init_gen_args)
+        if init_field is not None:
+            field = init_field.copy()
         ref._update_obj(field)
 
     if cached_ref_obj['obj'] is None:
@@ -59,11 +62,10 @@ def generate_beams(area_size, npoints, wl,
         obj.z = 0
         obj._update_obj(ref.field.copy(), ref.spectrum.copy())
     if object_gen is not None:
-        obj.coordinate_filter(
-            f_gen=lambda x, y: object_gen(x, y, *object_gen_args))
+        obj.coordinate_filter(f_gen=object_gen, fargs=object_gen_args)
 
-    obj.propagate(z_obj)
     ref.propagate(z_ref)
+    obj.propagate(z_obj)
 
     return ref.iprofile, obj.iprofile
 
@@ -72,10 +74,12 @@ def generate_beams(area_size, npoints, wl,
 def generate_data(self, i: int):
     ref_img, obj_img = \
         self.iprofiles_gen(self.area_size, self.npoints, self.wl,
-                           self.init_field, self.init_field_gen, self.init_gen_args,
+                           self.init_field,
+                           self.init_field_gen, self.init_gen_args,
                            self.object_gen, self.object_gen_args,
                            self.z_obj, self.z_ref,
-                           self.use_gpu, self.use_cupy, *self.iprofiles_gen_args)
+                           self.use_gpu, self.use_cupy,
+                           *self.iprofiles_gen_args)
     if self.use_backet:
         obj_data = self.xp.sum(obj_img)
     else:
@@ -86,17 +90,16 @@ def generate_data(self, i: int):
 
 
 @wrap_non_picklable_objects
-def generate_data_exp(self, i, path, crop):
-    _settings = namedtuple('settings', ['REF_CROP'])
-    settings = _settings(REF_CROP=crop)
-    init_field = get_ref_imgnum(path, settings)
+def generate_data_exp(self, i, path):
+    init_field = get_ref_imgnum(path, self.settings)
     npoints = init_field.shape[0]
     ref_img, obj_img = \
         self.iprofiles_gen(self.area_size, npoints, self.wl,
                            init_field, None, (),
                            self.object_gen, self.object_gen_args,
                            self.z_obj, self.z_ref,
-                           self.use_gpu, *self.iprofiles_gen_args)
+                           self.use_gpu, self.use_cupy,
+                           *self.iprofiles_gen_args)
     if self.use_backet:
         obj_data = self.xp.sum(obj_img)
     else:
@@ -136,8 +139,7 @@ class GIEmulator(GIExpDataProcessor):
     expdata_dir: str = ''
     expdata_format: str = 'bmp'
     expdata_crop: list = (150, 360,	70,	280)
-
-    parallel_njobs: int = 4
+    binning_order: int = 1
     img_prefix: str = ''
 
     xp: object = np
@@ -151,12 +153,31 @@ class GIEmulator(GIExpDataProcessor):
         """
         if self.use_cupy:
             self.xp = cp
+            if not self.use_gpu:
+                log.warn(
+                    f'{type(self).__name__}.use_cupy is True, {type(self).__name__}.use_gpu set to True')
+                self.use_gpu = True
+
+        SETS = namedtuple('settings',
+                          ['TCPOINTS', 'REF_CROP', 'BINNING'])
+        self.settings = SETS(
+            TCPOINTS=self.tcpoints,
+            REF_CROP=self.expdata_crop,
+            BINNING=self.binning_order)
 
         self.obj_data = self.xp.empty(self.imgs_number, dtype=np.float32)
+        if self.use_expdata:
+            ny, nx = (crop_shape(
+                self.settings.REF_CROP) // self.binning_order).astype(int)
+            if nx != ny:
+                raise ValueError(
+                    f'Experimental speckles crop must be quadratic, not {nx}x{ny}')
+            if nx != self.npoints:
+                log.warn(
+                    f'{type(self).__name__}.npoints is redefined from REF_CROP. npoints = {nx}')
+                self.npoints = nx
         self.ref_data = self.xp.empty(
             (self.imgs_number, self.npoints, self.npoints), dtype=np.float32)
-        self.settings = namedtuple('settings', ['TCPOINTS'])
-        self.settings.TCPOINTS = self.tcpoints
         """
         Здесь создается список объектных и референсных изображений
         self.obj_data -- изображения объекта
@@ -169,14 +190,11 @@ class GIEmulator(GIExpDataProcessor):
 
         if self.use_expdata:
             log.info(f'Using experimental profiles from {self.expdata_dir}')
-            Parallel(n_jobs=self.parallel_njobs)(
-                delayed(generate_data_exp)(self, i, path, self.expdata_crop)
-                for i, path in tqdm(
-                    enumerate(find_images(
-                        self.expdata_dir,
-                        self.imgs_number,
-                        self.expdata_format,
-                        self.img_prefix)), position=0, leave=True))
+            imgs_list = find_images(
+                self.expdata_dir, self.imgs_number,
+                self.expdata_format, self.img_prefix)
+            for i, path in tqdm(enumerate(imgs_list), position=0, leave=True):
+                generate_data_exp(self, i, path)
         else:
             log.info(
                 f'Using profiles generated by `{self.init_field_gen.__name__}`')
@@ -190,4 +208,4 @@ class GIEmulator(GIExpDataProcessor):
         self.sc = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.tc = self.xp.ones(self.settings.TCPOINTS)
         self.cd = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
-        self.times = np.arange(self.npoints)
+        self.times = np.arange(self.tcpoints)

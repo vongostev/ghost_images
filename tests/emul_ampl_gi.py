@@ -20,12 +20,12 @@ test = GIEmulator(area_size, npoints, wl0, nimg,
                   init_gen_args=(16,),
                   object_gen=rectangle_hole,
                   object_gen_args=(500, 100),
-                  parallel_njobs=1,
                   use_gpu=True,
                   use_cupy=True
                   )
 test.calculate_all()
 test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
+
 test.timecorr_data
 test.xycorr_data
 test.ghost_data

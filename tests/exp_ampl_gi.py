@@ -16,21 +16,31 @@ settings_file -- путь к файлу с настройками экспери
 # settings_file = r'H:\SciData\GI\110921\110921.txt'
 settings_file = r'H:\SciData\GI\211221_computational\ghost_proector_12_15_scatt.txt'
 
-analyser = GIExpDataProcessor(
+test = GIExpDataProcessor(
     settings_file, n_images=3000, parallel_njobs=-2,
     parallel_reading=1, binning_order=5, use_cupy=True)
-analyser.calculate_all()
-# analyser.calculate_ghostimage()
-# analyser.calculate_contrast()
-# analyser.calculate_xycorr()
-# analyser.calculate_timecorr()
-# analyser.calculate_xycorr_widths(nx=5, ny=5)
-# print(analyser.information)
+test.calculate_all()
+test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
 
-plt.plot(analyser.times, analyser.timecorr_data)
+test.timecorr_data
+test.xycorr_data
+test.ghost_data
+test.xycorr_widths_data
+test.contrast_data
+test.g2_data
+print(test.g2)
+print(test.contrast)
+print(test.xycorr_width)
+print(test.timecorr_width)
+
+plt.plot(test.times, test.timecorr_data)
 plt.show()
-plt.imshow(analyser.ghost_data)
+plt.imshow(test.ghost_data)
 plt.show()
 
-plt.imshow(analyser.xycorr_data)
+plt.imshow(test.xycorr_data)
+plt.show()
+
+plt.imshow(test.xycorr_widths_data.mean(axis=0))
+plt.colorbar()
 plt.show()
