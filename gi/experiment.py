@@ -66,7 +66,7 @@ def crop(img, c):
 
 
 def crop_shape(c):
-    return np.array([c[3] - c[2], c[1] - c[0]])
+    return np.asarray([c[3] - c[2], c[1] - c[0]])
 
 
 def imread(path, binning_order, crop_shape):
@@ -407,8 +407,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_imgcrop, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data = self.xp.array(ref_data_list)
-        self.obj_data = self.xp.array(obj_data_list)
+        self.ref_data = self.xp.asarray(ref_data_list)
+        self.obj_data = self.xp.asarray(obj_data_list)
 
     def _create_data_twoimgs(self):
         '''
@@ -421,8 +421,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_twoimgs, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data = self.xp.array(ref_data_list)
-        self.obj_data = self.xp.array(obj_data_list)
+        self.ref_data = self.xp.asarray(ref_data_list)
+        self.obj_data = self.xp.asarray(obj_data_list)
 
     def _create_data_imgnum(self):
         '''
@@ -433,7 +433,7 @@ class ObjRefGenerator:
         ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
         ref_data_list = self.__parallel_read(
             get_ref_imgnum, ref_img_paths)
-        self.ref_data = self.xp.array(ref_data_list)
+        self.ref_data = self.xp.asarray(ref_data_list)
         obj_file_name_split = self.settings.OBJ_FILE.split('.')
         ext = obj_file_name_split[-1]
         if ext == 'npy':
@@ -612,7 +612,7 @@ class GIExpDataProcessor:
                     f'Please set {type(self).__name__}.settings.TCPOINTS or `tcpoints` argument')
 
         ravel_data = self.ref_data.mean(axis=(1, 2))
-        self.tc[1:] = self.xp.array(
+        self.tc[1:] = self.xp.asarray(
             [autocorr1d(ravel_data, i, self.xp) for i in self.xp.arange(1, tcpoints)])
         log.info(
             f'Time correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
@@ -699,7 +699,7 @@ class ImgViewer:
         массивов numpy.ndarray или list в список отображения
         '''
         if type(data) == list:
-            data = np.array(data)
+            data = np.asarray(data)
         elif type(data) != np.ndarray:
             raise ValueError(
                 f'Additional data must be "list" or "ndarray", not {type(data)}')
