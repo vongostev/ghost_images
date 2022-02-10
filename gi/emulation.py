@@ -8,9 +8,7 @@ import sys
 import time
 from tqdm import tqdm
 from dataclasses import dataclass
-from joblib import Parallel, delayed, wrap_non_picklable_objects
 import numpy as np
-import cupy as cp
 from collections import namedtuple
 
 from lightprop2d import Beam2D
@@ -25,6 +23,14 @@ handler.setLevel(10)
 formatter = Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 log.addHandler(handler)
+
+try:
+    import cupy as cp
+    _using_cupy = True
+except ImportError as E:
+    _using_cupy = False
+    log.warn(
+        f"{E}, 'use_cupy' and 'use_gpu' keys are meaningless.")
 
 cached_ref_obj = {'ref': None, 'obj': None}
 
@@ -70,7 +76,6 @@ def generate_beams(area_size, npoints, wl,
     return ref.iprofile, obj.iprofile
 
 
-@wrap_non_picklable_objects
 def generate_data(self, i: int):
     ref_img, obj_img = \
         self.iprofiles_gen(self.area_size, self.npoints, self.wl,
@@ -89,7 +94,6 @@ def generate_data(self, i: int):
     self.obj_data[i] = obj_data
 
 
-@wrap_non_picklable_objects
 def generate_data_exp(self, i, path):
     init_field = get_ref_imgnum(path, self.settings)
     npoints = init_field.shape[0]
@@ -151,7 +155,7 @@ class GIEmulator(GIExpDataProcessor):
         по наблюдению фантомных изображений в квазитепловом свете
 
         """
-        if self.use_cupy:
+        if self.use_cupy and _using_cupy:
             self.xp = cp
             if not self.use_gpu:
                 log.warn(
