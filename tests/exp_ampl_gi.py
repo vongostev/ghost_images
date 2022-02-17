@@ -18,7 +18,7 @@ settings_file -- путь к файлу с настройками экспери
 settings_file = r'H:\SciData\GI\170222\ghost_proector_12_23.txt'
 
 test = GIExpDataProcessor(
-    settings_file, n_images=1000, parallel_njobs=-2,
+    settings_file, n_images=3000, parallel_njobs=-2,
     parallel_reading=1, binning_order=1, use_cupy=False)
 test.calculate_all()
 test.calculate_xycorr_widths(nx=10, ny=10, window_points=64)

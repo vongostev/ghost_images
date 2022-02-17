@@ -12,6 +12,7 @@ import time
 import numpy as np
 from functools import cached_property
 from tqdm import tqdm
+import psutil
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -46,8 +47,24 @@ IMG_IMG_DATA = 1
 IMG_NUM_DATA = 2
 
 
-def norm2_memeff(x, axis=None):
-    return np.sqrt(np.sum(x ** 2, axis=axis), dtype=np.float32)
+def norm2_memeff(x, axis=None, chunks=8, backend=None):
+    if backend is None:
+        backend = getbackend(x)
+
+    if backend.__name__ == 'numpy':
+        avmem = psutil.virtual_memory().available
+    elif backend.__name__ == 'cupy':
+        avmem = backend.get_default_memory_pool().free_bytes()
+    if x.size > avmem / 3:
+        log.debug('Memory efficient norm. Array is chunked')
+        xlen = x.shape[0]
+        indxs = np.linspace(0, xlen, chunks, dtype=np.int32)
+        ssum = 0
+        for i in range(chunks - 1):
+            ssum += backend.sum(x[indxs[i]:indxs[i+1]] ** 2, axis=axis)
+        return backend.sqrt(ssum)
+
+    return backend.linalg.norm(x, axis=axis)
 
 
 def getbackend(obj: object) -> ModuleType:
@@ -286,8 +303,8 @@ def autocorr1d(data, i, backend=None):
         backend = getbackend(data)
     obj_data = data[:-i]
     ref_data = data[i:]
-    od = obj_data - obj_data.mean(dtype=backend.float32)
-    rd = ref_data - ref_data.mean(dtype=backend.float32)
+    od = obj_data - obj_data.mean(dtype=np.float32)
+    rd = ref_data - ref_data.mean(dtype=np.float32)
     s1 = (od * rd).sum()
     s2 = norm2_memeff(od) * norm2_memeff(rd)
     return backend.nan_to_num(s1 / s2)
@@ -298,11 +315,10 @@ def corr1d3d(obj_data, ref_data, backend=None):
         backend = getbackend(obj_data)
     log.debug(
         'Compute correlation function using `np.einsum`')
-    od = obj_data - obj_data.mean(dtype=backend.float32)
-    rm = ref_data.mean(axis=0, dtype=backend.float32)
-    rd = ref_data - rm
-    s1 = backend.einsum('i,ijk->jk', od, rd)
-    s2 = norm2_memeff(od) * norm2_memeff(rd, axis=0)
+    od = obj_data - obj_data.mean(dtype=np.float32)
+    rm = ref_data.mean(axis=0, dtype=np.float32)
+    s1 = backend.einsum('i,ijk->jk', od, ref_data, dtype=np.float32)
+    s2 = norm2_memeff(od) * (norm2_memeff(ref_data, axis=0) - rm)
     return backend.nan_to_num(s1 / s2)
 
 
@@ -311,8 +327,8 @@ def corr3d3d(obj_data_3d, ref_data, backend=None):
         backend = getbackend(obj_data_3d)
     log.debug(
         'Compute correlation function using `np.einsum`')
-    od = obj_data_3d - obj_data_3d.mean(axis=0, dtype=backend.float32)
-    rd = ref_data - ref_data.mean(axis=0, dtype=backend.float32)
+    od = obj_data_3d - obj_data_3d.mean(axis=0, dtype=np.float32)
+    rd = ref_data - ref_data.mean(axis=0, dtype=np.float32)
     s1 = backend.einsum('inm,ijk->nmjk', od, rd)
     s2 = backend.linalg.norm(od, axis=0) * backend.linalg.norm(rd, axis=0)
     return backend.nan_to_num(s1 / s2)
@@ -351,10 +367,7 @@ def xycorr(self, p, w):
     ly = max(y - w // 2, 0)
     tx = min(x + w // 2, self.Nx)
     ty = min(y + w // 2, self.Ny)
-    # log.info(y, x, lx, ly, tx, ty)
-    sc = corr1d3d(
-        self.ref_data[:, y, x],
-        self.ref_data[:, ly:ty, lx:tx])
+    sc = corr1d3d(self.ref_data[:, y, x], self.ref_data[:, ly:ty, lx:tx])
     return xycorr_width(sc, backend=self.xp)
 
 
@@ -389,9 +402,6 @@ class ObjRefGenerator:
         self.settings = settings
         self.bo = binning_order
         self.njobs = parallel_njobs
-        self.ref_data = self.xp.empty(
-            (settings.N, *crop_shape(settings.REF_CROP)), dtype=np.uint8)
-        self.obj_data = self.xp.empty(settings.N, dtype=np.float32)
 
         if self.settings.FORMAT == IMG_CROP_DATA:
             self._create_data_crop()
@@ -416,8 +426,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_imgcrop, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data[:] = ref_data_list
-        self.obj_data[:] = obj_data_list
+        self.ref_data = self.xp.asarray(ref_data_list, dtype=np.uint8)
+        self.obj_data = self.xp.asarray(obj_data_list, dtype=np.float32)
 
     def _create_data_twoimgs(self):
         '''
@@ -430,8 +440,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_twoimgs, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data[:] = ref_data_list
-        self.obj_data[:] = obj_data_list
+        self.ref_data = self.xp.asarray(ref_data_list, dtype=np.uint8)
+        self.obj_data = self.xp.asarray(obj_data_list, dtype=np.float32)
 
     def _create_data_imgnum(self):
         '''
@@ -442,7 +452,7 @@ class ObjRefGenerator:
         ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
         ref_data_list = self.__parallel_read(
             get_ref_imgnum, ref_img_paths)
-        self.ref_data[:] = ref_data_list
+        self.ref_data = self.xp.asarray(ref_data_list, dtype=np.uint8)
         obj_file_name_split = self.settings.OBJ_FILE.split('.')
         ext = obj_file_name_split[-1]
         if ext == 'npy':
@@ -454,7 +464,7 @@ class ObjRefGenerator:
         else:
             raise NotImplementedError(
                 f'Objective channel data must be in `npy`, `txt`, `csv`, or `dat` format, not `{ext}`')
-        self.obj_data[:] = obj_data.flatten()[:self.settings.N]
+        self.obj_data = obj_data.flatten()[:self.settings.N].astype(np.float32)
 
     def unpack(self):
         return self.ref_data, self.obj_data
