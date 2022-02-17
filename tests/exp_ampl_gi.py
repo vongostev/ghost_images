@@ -14,13 +14,14 @@ settings_file -- путь к файлу с настройками экспери
 # settings_file = r'H:\SciData\GI\17_04_2019_obj_v\17_04_2019_obj_v.txt'
 # settings_file = r'C:\Users\von.gostev\Downloads\17_04_2019_obj_v\17_04_2019_obj_v.txt'
 # settings_file = r'H:\SciData\GI\110921\110921.txt'
-settings_file = r'H:\SciData\GI\211221_computational\ghost_proector_12_15_scatt.txt'
+# settings_file = r'H:\SciData\GI\211221_computational\ghost_proector_12_15_scatt.txt'
+settings_file = r'H:\SciData\GI\170222\ghost_proector_12_23.txt'
 
 test = GIExpDataProcessor(
-    settings_file, n_images=3000, parallel_njobs=-2,
-    parallel_reading=1, binning_order=5, use_cupy=True)
+    settings_file, n_images=1000, parallel_njobs=-2,
+    parallel_reading=1, binning_order=1, use_cupy=False)
 test.calculate_all()
-test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
+test.calculate_xycorr_widths(nx=10, ny=10, window_points=64)
 
 test.timecorr_data
 test.xycorr_data

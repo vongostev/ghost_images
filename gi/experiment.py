@@ -46,6 +46,10 @@ IMG_IMG_DATA = 1
 IMG_NUM_DATA = 2
 
 
+def norm2_memeff(x, axis=None):
+    return np.sqrt(np.sum(x ** 2, axis=axis), dtype=np.float32)
+
+
 def getbackend(obj: object) -> ModuleType:
     module_name = type(obj).__module__.split('.')[0]
     if module_name in ['numpy', 'cupy']:
@@ -285,7 +289,7 @@ def autocorr1d(data, i, backend=None):
     od = obj_data - obj_data.mean(dtype=backend.float32)
     rd = ref_data - ref_data.mean(dtype=backend.float32)
     s1 = (od * rd).sum()
-    s2 = backend.linalg.norm(od) * backend.linalg.norm(rd)
+    s2 = norm2_memeff(od) * norm2_memeff(rd)
     return backend.nan_to_num(s1 / s2)
 
 
@@ -295,9 +299,10 @@ def corr1d3d(obj_data, ref_data, backend=None):
     log.debug(
         'Compute correlation function using `np.einsum`')
     od = obj_data - obj_data.mean(dtype=backend.float32)
-    rd = ref_data - ref_data.mean(axis=0, dtype=backend.float32)
+    rm = ref_data.mean(axis=0, dtype=backend.float32)
+    rd = ref_data - rm
     s1 = backend.einsum('i,ijk->jk', od, rd)
-    s2 = backend.linalg.norm(od) * backend.linalg.norm(rd, axis=0)
+    s2 = norm2_memeff(od) * norm2_memeff(rd, axis=0)
     return backend.nan_to_num(s1 / s2)
 
 
@@ -341,11 +346,12 @@ def xycorr_width(sc, p=None, backend=None):
 
 @wrap_non_picklable_objects
 def xycorr(self, p, w):
-    y, x = p
+    x, y = p
     lx = max(x - w // 2, 0)
     ly = max(y - w // 2, 0)
     tx = min(x + w // 2, self.Nx)
     ty = min(y + w // 2, self.Ny)
+    # log.info(y, x, lx, ly, tx, ty)
     sc = corr1d3d(
         self.ref_data[:, y, x],
         self.ref_data[:, ly:ty, lx:tx])
@@ -383,6 +389,9 @@ class ObjRefGenerator:
         self.settings = settings
         self.bo = binning_order
         self.njobs = parallel_njobs
+        self.ref_data = self.xp.empty(
+            (settings.N, *crop_shape(settings.REF_CROP)), dtype=np.uint8)
+        self.obj_data = self.xp.empty(settings.N, dtype=np.float32)
 
         if self.settings.FORMAT == IMG_CROP_DATA:
             self._create_data_crop()
@@ -407,8 +416,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_imgcrop, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data = self.xp.asarray(ref_data_list)
-        self.obj_data = self.xp.asarray(obj_data_list)
+        self.ref_data[:] = ref_data_list
+        self.obj_data[:] = obj_data_list
 
     def _create_data_twoimgs(self):
         '''
@@ -421,8 +430,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_twoimgs, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data = self.xp.asarray(ref_data_list)
-        self.obj_data = self.xp.asarray(obj_data_list)
+        self.ref_data[:] = ref_data_list
+        self.obj_data[:] = obj_data_list
 
     def _create_data_imgnum(self):
         '''
@@ -433,17 +442,19 @@ class ObjRefGenerator:
         ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
         ref_data_list = self.__parallel_read(
             get_ref_imgnum, ref_img_paths)
-        self.ref_data = self.xp.asarray(ref_data_list)
+        self.ref_data[:] = ref_data_list
         obj_file_name_split = self.settings.OBJ_FILE.split('.')
         ext = obj_file_name_split[-1]
         if ext == 'npy':
-            obj_data = self.xp.load(self.settings.OBJ_FILE)
+            obj_data = self.xp.load(
+                self.settings.OBJ_FILE)
         elif ext in ['txt', 'csv', 'dat']:
-            obj_data = self.xp.loadtxt(self.settings.OBJ_FILE)
+            obj_data = self.xp.loadtxt(
+                self.settings.OBJ_FILE)
         else:
             raise NotImplementedError(
                 f'Objective channel data must be in `npy`, `txt`, `csv`, or `dat` format, not `{ext}`')
-        self.obj_data = obj_data.flatten()[:self.settings.N]
+        self.obj_data[:] = obj_data.flatten()[:self.settings.N]
 
     def unpack(self):
         return self.ref_data, self.obj_data
@@ -477,7 +488,7 @@ class GIExpDataProcessor:
             self.settings.REF_CROP) // binning_order).astype(int)
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
-        self.obj_data = self.xp.zeros(self.imgs_number)
+        self.obj_data = self.xp.zeros(self.imgs_number, dtype=np.float32)
         self.ref_data = self.xp.zeros((self.imgs_number, self.Ny, self.Nx),
                                       dtype=np.uint8)
         self.gi = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
