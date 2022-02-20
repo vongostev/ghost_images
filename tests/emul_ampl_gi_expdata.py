@@ -22,7 +22,8 @@ area_size = 210 * 6.45  # 200 um
 # Wavelength in cm
 wl0 = 632
 
-test = GIEmulator(area_size, npoints, wl0, 2000,
+test = GIEmulator(area_size, npoints, wl0, 
+                  nimgs=1000,
                   object_gen=round_hole,
                   object_gen_args=(area_size / 4,),
                   binning_order=2,

@@ -13,6 +13,7 @@ import numpy as np
 from functools import cached_property
 from tqdm import tqdm
 import psutil
+from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -49,7 +50,7 @@ except ImportError as E:
     _using_dask = False
     log.warn(
         f"ImportError : {E}, 'use_dask' key is meaningless.")
-    
+
 IMG_CROP_DATA = 0
 IMG_IMG_DATA = 1
 IMG_NUM_DATA = 2
@@ -79,6 +80,8 @@ def getbackend(obj: object) -> ModuleType:
     module_name = type(obj).__module__.split('.')[0]
     if module_name in ['numpy', 'cupy']:
         return __import__(module_name)
+    if module_name == 'dask':
+        return __import__('dask').array
     else:
         raise ValueError(
             f'Unknown backend `{module_name}`. Check object `{type(obj)}` type.')
@@ -314,7 +317,7 @@ def autocorr1d(data, i, backend=None):
     od = obj_data - obj_data.mean(dtype=np.float32)
     rd = ref_data - ref_data.mean(dtype=np.float32)
     s1 = (od * rd).sum()
-    s2 = norm2_memeff(od) * norm2_memeff(rd)
+    s2 = backend.linalg.norm(od) * backend.linalg.norm(rd)
     return backend.nan_to_num(s1 / s2)
 
 
@@ -326,7 +329,7 @@ def corr1d3d(obj_data, ref_data, backend=None):
     od = obj_data - obj_data.mean(dtype=np.float32)
     rm = ref_data.mean(axis=0, dtype=np.float32)
     s1 = backend.einsum('i,ijk->jk', od, ref_data, dtype=np.float32)
-    s2 = norm2_memeff(od) * (norm2_memeff(ref_data, axis=0) - rm)
+    s2 = backend.linalg.norm(od) * (backend.linalg.norm(ref_data, axis=0) - rm)
     return backend.nan_to_num(s1 / s2)
 
 
@@ -478,37 +481,47 @@ class ObjRefGenerator:
         return self.ref_data, self.obj_data
 
 
+@dataclass
 class GIExpDataProcessor:
 
-    _g2 = None
-    sc_widths = None
-    backend = np
+    settings_file: str
+    nimgs: int = 0
+    binning_order: int = 1
 
-    def __init__(self, settings_file: str, binning_order: int = 1,
-                 n_images: int = 0, parallel_njobs: int = -1,
-                 parallel_reading: bool = True, use_cupy=False):
+    parallel_njobs: int = -1
+    parallel_reading: bool = True
 
-        self.use_cupy = use_cupy
-        if use_cupy and _using_cupy:
+    use_cupy: bool = False
+    use_dask: bool = False
+    dask_chunk_size: int = 128
+
+    _g2: float = None
+    _sc_widths: object = None
+    backend: object = np
+
+    def __post_init__(self):
+
+        if self.use_cupy and _using_cupy:
             self.backend = cp
 
-        self.parallel_njobs = parallel_njobs
-        self.settings = GISettings(settings_file)
-        self.settings.BINNING = binning_order
-        if n_images:
-            self.settings.N = n_images
+        self.use_dask = self.use_dask and _using_dask
+        self.settings = GISettings(self.settings_file)
 
         log.info('Experiment settings:\n' + json.dumps(
             self.settings.__dict__, indent=4)[2:-2])
 
-        self.imgs_number = self.settings.N
+        self.settings.BINNING = self.binning_order
+        if self.nimgs:
+            self.settings.N = self.nimgs
+        else:
+            self.nimgs = self.settings.N
+
         self.Ny, self.Nx = (crop_shape(
-            self.settings.REF_CROP) // binning_order).astype(int)
+            self.settings.REF_CROP) // self.binning_order).astype(int)
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
-        self.obj_data = self.backend.zeros(self.imgs_number, dtype=np.float32)
-        self.ref_data = self.backend.zeros((self.imgs_number, self.Ny, self.Nx),
-                                      dtype=np.uint8)
+        self._allocate_data()
+
         self.gi = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         self.sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
@@ -521,14 +534,29 @@ class GIExpDataProcessor:
         log.info('Loading obj and ref data')
         t = time.time()
         data_generator = ObjRefGenerator(
-            self.settings, binning_order,
-            parallel_njobs if parallel_reading else 1,
-            use_cupy=self.use_cupy and _using_cupy)
+            self.settings, self.binning_order,
+            self.parallel_njobs if self.parallel_reading else 1,
+            use_cupy=self.use_cupy)
         self.ref_data, self.obj_data = data_generator.unpack()
         # Update Nx, Ny because of rounding in low_res
         self.Ny, self.Nx = self.ref_data.shape[1:]
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
+
+    def _allocate_data(self):
+        """
+        Здесь создается список объектных и референсных изображений
+        self.obj_data -- изображения объекта
+        self.ref_data -- изображения референсного пучка
+        """
+        self.obj_data = self.backend.zeros(self.nimgs, dtype=np.float32)
+        self.ref_data = self.backend.zeros((self.nimgs, self.Ny, self.Nx),
+                                           dtype=np.uint8)
+        if self.use_dask:
+            self.obj_data = da.asarray(
+                self.obj_data, chunks=(self.dask_chunk_size,)).persist()
+            self.ref_data = da.asarray(self.ref_data, chunks=(
+                None, self.dask_chunk_size, self.dask_chunk_size)).persist()
 
     def _np(self, data):
         """Convert cupy or numpy arrays to numpy array.
@@ -545,6 +573,8 @@ class GIExpDataProcessor:
 
         """
         # Return numpy array from numpy or cupy array
+        if data is None:
+            return np.nan
         if self.backend.__name__ == 'cupy':
             return data.get()
         return data
@@ -558,7 +588,7 @@ class GIExpDataProcessor:
         if data_start is None:
             data_start = 0
         if data_end is None:
-            data_end = self.imgs_number
+            data_end = self.nimgs
         log.info('Calculating ghost image')
         t = time.time()
 
@@ -617,14 +647,14 @@ class GIExpDataProcessor:
         log.info(
             'Calculating spatial correlation function width in different pixels')
         t = time.time()
-        self.sc_widths = self.backend.empty((nx * ny, 2))
+        self._sc_widths = self.backend.empty((nx * ny, 2))
         points = self.backend.mgrid[
             (self.Nx - nx) // 2:(self.Nx + nx) // 2,
             (self.Ny - ny) // 2:(self.Ny + ny) // 2].T.reshape((-1, 2))
         for i, p in tqdm(enumerate(points), position=0, leave=True):
-            self.sc_widths[i] = xycorr(self, p, window_points)
+            self._sc_widths[i] = xycorr(self, p, window_points)
         print()
-        self.sc_widths = self.sc_widths.swapaxes(1, 0).reshape((2, ny, nx))
+        self._sc_widths = self._sc_widths.swapaxes(1, 0).reshape((2, ny, nx))
         log.info(
             f'Spatial correlation function widths calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -685,7 +715,7 @@ class GIExpDataProcessor:
 
     @property
     def xycorr_widths_data(self):
-        return self._np(self.sc_widths)
+        return self._np(self._sc_widths)
 
     @property
     def contrast_data(self):
@@ -697,11 +727,11 @@ class GIExpDataProcessor:
 
     @cached_property
     def xycorr_width(self):
-        if self.sc_widths is None:
-            return xycorr_width(self.xycorr_data, self.sc_point, self.backend)
+        if self._sc_widths is None:
+            return xycorr_width(self.sc, self.sc_point, self.backend)
         else:
-            return self.sc_widths[
-                self.sc_widths > 0].reshape((2, -1)).mean(axis=1)
+            return self._sc_widths[
+                self._sc_widths > 0].reshape((2, -1)).mean(axis=1)
 
     @cached_property
     def timecorr_width(self):
