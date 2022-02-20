@@ -56,26 +56,6 @@ IMG_IMG_DATA = 1
 IMG_NUM_DATA = 2
 
 
-def norm2_memeff(x, axis=None, chunks=8, backend=None):
-    if backend is None:
-        backend = getbackend(x)
-
-    if backend.__name__ == 'numpy':
-        avmem = psutil.virtual_memory().available
-    elif backend.__name__ == 'cupy':
-        avmem = backend.get_default_memory_pool().free_bytes()
-    if x.size > avmem / 3:
-        log.debug('Memory efficient norm. Array is chunked')
-        xlen = x.shape[0]
-        indxs = np.linspace(0, xlen, chunks, dtype=np.int32)
-        ssum = 0
-        for i in range(chunks - 1):
-            ssum += backend.sum(x[indxs[i]:indxs[i+1]] ** 2, axis=axis)
-        return backend.sqrt(ssum)
-
-    return backend.linalg.norm(x, axis=axis)
-
-
 def getbackend(obj: object) -> ModuleType:
     module_name = type(obj).__module__.split('.')[0]
     if module_name in ['numpy', 'cupy']:
@@ -85,6 +65,41 @@ def getbackend(obj: object) -> ModuleType:
     else:
         raise ValueError(
             f'Unknown backend `{module_name}`. Check object `{type(obj)}` type.')
+
+
+def maybe_dask(obj):
+    if 'dask' in str(type(obj)):
+        return obj.compute()
+    return obj
+
+
+def blocked3d(func):
+    """
+    Decorator to blocked (chunked) calculations.
+    It gives the 2nd argument of the given `func`
+    and runs the `func` in `map_blocks` method
+
+    Parameters
+    ----------
+    func : callable
+        Callable function where the 2nd argument is a `dask.array`.
+
+    Returns
+    -------
+    callable
+        Decorated function.
+
+    """
+    def wrapper(*args, **kwargs):
+
+        ref_module = type(args[1]).__module__.split('.')[0]
+        if ref_module == 'dask':
+            return args[1].map_blocks(
+                lambda data: func(args[0], data, *args[2:], **kwargs),
+                drop_axis=(0,)).compute()
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def low_res(img, n):
@@ -321,6 +336,7 @@ def autocorr1d(data, i, backend=None):
     return backend.nan_to_num(s1 / s2)
 
 
+@blocked3d
 def corr1d3d(obj_data, ref_data, backend=None):
     if backend is None:
         backend = getbackend(obj_data)
@@ -330,18 +346,6 @@ def corr1d3d(obj_data, ref_data, backend=None):
     rm = ref_data.mean(axis=0, dtype=np.float32)
     s1 = backend.einsum('i,ijk->jk', od, ref_data, dtype=np.float32)
     s2 = backend.linalg.norm(od) * (backend.linalg.norm(ref_data, axis=0) - rm)
-    return backend.nan_to_num(s1 / s2)
-
-
-def corr3d3d(obj_data_3d, ref_data, backend=None):
-    if backend is None:
-        backend = getbackend(obj_data_3d)
-    log.debug(
-        'Compute correlation function using `np.einsum`')
-    od = obj_data_3d - obj_data_3d.mean(axis=0, dtype=np.float32)
-    rd = ref_data - ref_data.mean(axis=0, dtype=np.float32)
-    s1 = backend.einsum('inm,ijk->nmjk', od, rd)
-    s2 = backend.linalg.norm(od, axis=0) * backend.linalg.norm(rd, axis=0)
     return backend.nan_to_num(s1 / s2)
 
 
@@ -371,14 +375,14 @@ def xycorr_width(sc, p=None, backend=None):
         [FWHM(xslice, Xc, backend), FWHM(yslice, Yc, backend)])
 
 
-@wrap_non_picklable_objects
 def xycorr(self, p, w):
     x, y = p
     lx = max(x - w // 2, 0)
     ly = max(y - w // 2, 0)
     tx = min(x + w // 2, self.Nx)
     ty = min(y + w // 2, self.Ny)
-    sc = corr1d3d(self.ref_data[:, y, x], self.ref_data[:, ly:ty, lx:tx])
+    rd = maybe_dask(self.ref_data[:, ly:ty, lx:tx])
+    sc = corr1d3d(rd[:, y - ly, x - lx], rd)
     return xycorr_width(sc, backend=self.backend)
 
 
@@ -503,8 +507,13 @@ class GIExpDataProcessor:
 
         if self.use_cupy and _using_cupy:
             self.backend = cp
+            log.warn('`cupy` backend used. Be careful of GPU memory leak')
 
         self.use_dask = self.use_dask and _using_dask
+        if self.use_dask:
+            log.warn('`dask.array` used. Be careful of non-computed things')
+            log.warn('`dask.array` may be slow on the small data')
+
         self.settings = GISettings(self.settings_file)
 
         log.info('Experiment settings:\n' + json.dumps(
@@ -523,7 +532,6 @@ class GIExpDataProcessor:
         self._allocate_data()
 
         self.gi = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
-
         self.sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.times = np.linspace(
             0, self.settings.TCPOINTS / self.settings.FREQ,
@@ -540,6 +548,9 @@ class GIExpDataProcessor:
         self.ref_data, self.obj_data = data_generator.unpack()
         # Update Nx, Ny because of rounding in low_res
         self.Ny, self.Nx = self.ref_data.shape[1:]
+
+        self._make_blocked_ref_data()
+
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
 
@@ -552,11 +563,11 @@ class GIExpDataProcessor:
         self.obj_data = self.backend.zeros(self.nimgs, dtype=np.float32)
         self.ref_data = self.backend.zeros((self.nimgs, self.Ny, self.Nx),
                                            dtype=np.uint8)
+
+    def _make_blocked_ref_data(self):
         if self.use_dask:
-            self.obj_data = da.asarray(
-                self.obj_data, chunks=(self.dask_chunk_size,)).persist()
-            self.ref_data = da.asarray(self.ref_data, chunks=(
-                None, self.dask_chunk_size, self.dask_chunk_size)).persist()
+            self.ref_data = da.from_array(self.ref_data, chunks=(
+                None, self.dask_chunk_size, self.dask_chunk_size))
 
     def _np(self, data):
         """Convert cupy or numpy arrays to numpy array.
@@ -575,6 +586,8 @@ class GIExpDataProcessor:
         # Return numpy array from numpy or cupy array
         if data is None:
             return np.nan
+
+        data = maybe_dask(data)
         if self.backend.__name__ == 'cupy':
             return data.get()
         return data
@@ -648,7 +661,7 @@ class GIExpDataProcessor:
             'Calculating spatial correlation function width in different pixels')
         t = time.time()
         self._sc_widths = self.backend.empty((nx * ny, 2))
-        points = self.backend.mgrid[
+        points = np.mgrid[
             (self.Nx - nx) // 2:(self.Nx + nx) // 2,
             (self.Ny - ny) // 2:(self.Ny + ny) // 2].T.reshape((-1, 2))
         for i, p in tqdm(enumerate(points), position=0, leave=True):
@@ -670,7 +683,7 @@ class GIExpDataProcessor:
                     'Number of time correlation points is undefined.' +
                     f'Please set {type(self).__name__}.settings.TCPOINTS or `tcpoints` argument')
 
-        ravel_data = self.ref_data.mean(axis=(1, 2))
+        ravel_data = maybe_dask(self.ref_data.mean(axis=(1, 2)))
         self.tc[1:] = self.backend.asarray(
             [autocorr1d(ravel_data, i, self.backend) for i in self.backend.arange(1, tcpoints)])
         log.info(
@@ -699,7 +712,7 @@ class GIExpDataProcessor:
 
     @cached_property
     def g2(self):
-        return self._g2.mean()
+        return self.g2_data.mean()
 
     @property
     def ghost_data(self):

@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 npoints = 256
 wl0 = 0.632
-nimgs = 1000
+nimgs = 100
 area_size = 1000
 
 test = GIEmulator(area_size, npoints, wl0, nimgs=nimgs,
@@ -22,10 +22,10 @@ test = GIEmulator(area_size, npoints, wl0, nimgs=nimgs,
                   object_gen_args=(500, 100),
                   use_gpu=True,
                   use_cupy=True,
-                  use_dask=False
+                  use_dask=True
                   )
 test.calculate_all()
-# test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
+test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
 
 test.timecorr_data
 test.xycorr_data

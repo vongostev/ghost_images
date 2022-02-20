@@ -211,9 +211,10 @@ class GIEmulator(GIExpDataProcessor, __GIEmulatorDefault):
         print()
         log.info(
             f'Obj and ref data generated. Elapsed time {(time.time() - t):.3f} s')
+
         self.gi = self.backend.zeros_like(self.ref_data[0])
-        self.Nx = self.Ny = self.ghost_data.shape[0]
         self.sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.tc = self.backend.ones(self.settings.TCPOINTS)
         self.cd = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.times = np.arange(self.tcpoints)
+        self._make_blocked_ref_data()

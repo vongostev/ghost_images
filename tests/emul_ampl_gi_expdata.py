@@ -31,7 +31,8 @@ test = GIEmulator(area_size, npoints, wl0,
                   expdata_crop=ref_crop,
                   img_prefix='Pattern',
                   use_expdata=True,
-                  use_cupy=True)
+                  use_cupy=True,
+                  use_dask=True)
 test.calculate_all()
 test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
 
