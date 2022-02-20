@@ -42,6 +42,14 @@ except ImportError as E:
     log.warn(
         f"ImportError : {E}, 'use_cupy' key is meaningless.")
 
+try:
+    import dask.array as da
+    _using_dask = True
+except ImportError as E:
+    _using_dask = False
+    log.warn(
+        f"ImportError : {E}, 'use_dask' key is meaningless.")
+    
 IMG_CROP_DATA = 0
 IMG_IMG_DATA = 1
 IMG_NUM_DATA = 2
@@ -368,12 +376,12 @@ def xycorr(self, p, w):
     tx = min(x + w // 2, self.Nx)
     ty = min(y + w // 2, self.Ny)
     sc = corr1d3d(self.ref_data[:, y, x], self.ref_data[:, ly:ty, lx:tx])
-    return xycorr_width(sc, backend=self.xp)
+    return xycorr_width(sc, backend=self.backend)
 
 
 class ObjRefGenerator:
 
-    xp = np
+    backend = np
 
     def __init__(self, settings: GISettings, binning_order: int = 1,
                  parallel_njobs: int = 1, use_cupy=False):
@@ -397,7 +405,7 @@ class ObjRefGenerator:
 
         """
         if use_cupy and _using_cupy:
-            self.xp = cp
+            self.backend = cp
 
         self.settings = settings
         self.bo = binning_order
@@ -426,8 +434,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_imgcrop, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data = self.xp.asarray(ref_data_list, dtype=np.uint8)
-        self.obj_data = self.xp.asarray(obj_data_list, dtype=np.float32)
+        self.ref_data = self.backend.asarray(ref_data_list, dtype=np.uint8)
+        self.obj_data = self.backend.asarray(obj_data_list, dtype=np.float32)
 
     def _create_data_twoimgs(self):
         '''
@@ -440,8 +448,8 @@ class ObjRefGenerator:
         data_list = self.__parallel_read(
             get_objref_twoimgs, img_paths)
         ref_data_list, obj_data_list = zip(*data_list)
-        self.ref_data = self.xp.asarray(ref_data_list, dtype=np.uint8)
-        self.obj_data = self.xp.asarray(obj_data_list, dtype=np.float32)
+        self.ref_data = self.backend.asarray(ref_data_list, dtype=np.uint8)
+        self.obj_data = self.backend.asarray(obj_data_list, dtype=np.float32)
 
     def _create_data_imgnum(self):
         '''
@@ -452,14 +460,14 @@ class ObjRefGenerator:
         ref_img_paths = get_images(self.settings.REF_DIR, self.settings)
         ref_data_list = self.__parallel_read(
             get_ref_imgnum, ref_img_paths)
-        self.ref_data = self.xp.asarray(ref_data_list, dtype=np.uint8)
+        self.ref_data = self.backend.asarray(ref_data_list, dtype=np.uint8)
         obj_file_name_split = self.settings.OBJ_FILE.split('.')
         ext = obj_file_name_split[-1]
         if ext == 'npy':
-            obj_data = self.xp.load(
+            obj_data = self.backend.load(
                 self.settings.OBJ_FILE)
         elif ext in ['txt', 'csv', 'dat']:
-            obj_data = self.xp.loadtxt(
+            obj_data = self.backend.loadtxt(
                 self.settings.OBJ_FILE)
         else:
             raise NotImplementedError(
@@ -474,7 +482,7 @@ class GIExpDataProcessor:
 
     _g2 = None
     sc_widths = None
-    xp = np
+    backend = np
 
     def __init__(self, settings_file: str, binning_order: int = 1,
                  n_images: int = 0, parallel_njobs: int = -1,
@@ -482,7 +490,7 @@ class GIExpDataProcessor:
 
         self.use_cupy = use_cupy
         if use_cupy and _using_cupy:
-            self.xp = cp
+            self.backend = cp
 
         self.parallel_njobs = parallel_njobs
         self.settings = GISettings(settings_file)
@@ -498,17 +506,17 @@ class GIExpDataProcessor:
             self.settings.REF_CROP) // binning_order).astype(int)
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
-        self.obj_data = self.xp.zeros(self.imgs_number, dtype=np.float32)
-        self.ref_data = self.xp.zeros((self.imgs_number, self.Ny, self.Nx),
+        self.obj_data = self.backend.zeros(self.imgs_number, dtype=np.float32)
+        self.ref_data = self.backend.zeros((self.imgs_number, self.Ny, self.Nx),
                                       dtype=np.uint8)
-        self.gi = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self.gi = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
 
-        self.sc = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self.sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.times = np.linspace(
             0, self.settings.TCPOINTS / self.settings.FREQ,
             self.settings.TCPOINTS)
-        self.tc = self.xp.ones(self.settings.TCPOINTS)
-        self.cd = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self.tc = self.backend.ones(self.settings.TCPOINTS)
+        self.cd = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
 
         log.info('Loading obj and ref data')
         t = time.time()
@@ -537,7 +545,7 @@ class GIExpDataProcessor:
 
         """
         # Return numpy array from numpy or cupy array
-        if self.xp.__name__ == 'cupy':
+        if self.backend.__name__ == 'cupy':
             return data.get()
         return data
 
@@ -609,8 +617,8 @@ class GIExpDataProcessor:
         log.info(
             'Calculating spatial correlation function width in different pixels')
         t = time.time()
-        self.sc_widths = self.xp.empty((nx * ny, 2))
-        points = self.xp.mgrid[
+        self.sc_widths = self.backend.empty((nx * ny, 2))
+        points = self.backend.mgrid[
             (self.Nx - nx) // 2:(self.Nx + nx) // 2,
             (self.Ny - ny) // 2:(self.Ny + ny) // 2].T.reshape((-1, 2))
         for i, p in tqdm(enumerate(points), position=0, leave=True):
@@ -633,14 +641,14 @@ class GIExpDataProcessor:
                     f'Please set {type(self).__name__}.settings.TCPOINTS or `tcpoints` argument')
 
         ravel_data = self.ref_data.mean(axis=(1, 2))
-        self.tc[1:] = self.xp.asarray(
-            [autocorr1d(ravel_data, i, self.xp) for i in self.xp.arange(1, tcpoints)])
+        self.tc[1:] = self.backend.asarray(
+            [autocorr1d(ravel_data, i, self.backend) for i in self.backend.arange(1, tcpoints)])
         log.info(
             f'Time correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
     def calculate_contrast(self):
-        _gi = self.xp.abs(self.gi)
-        _mean_gi = self.xp.min(_gi)
+        _gi = self.backend.abs(self.gi)
+        _mean_gi = self.backend.min(_gi)
         self.cd = (_gi - _mean_gi) / (_gi + _mean_gi)
         log.info('Ghost image contrast calculated')
 
@@ -652,8 +660,8 @@ class GIExpDataProcessor:
         self.calculate_g2()
 
     def calculate_g2(self, noise=0):
-        self._g2 = self.xp.mean((self.ref_data - noise)**2, axis=0) / \
-            self.xp.mean(self.ref_data - noise, axis=0)**2
+        self._g2 = self.backend.mean((self.ref_data - noise)**2, axis=0) / \
+            self.backend.mean(self.ref_data - noise, axis=0)**2
 
     @property
     def g2_data(self):
@@ -690,7 +698,7 @@ class GIExpDataProcessor:
     @cached_property
     def xycorr_width(self):
         if self.sc_widths is None:
-            return xycorr_width(self.xycorr_data, self.sc_point, self.xp)
+            return xycorr_width(self.xycorr_data, self.sc_point, self.backend)
         else:
             return self.sc_widths[
                 self.sc_widths > 0].reshape((2, -1)).mean(axis=1)

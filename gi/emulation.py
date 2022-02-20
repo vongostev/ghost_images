@@ -86,7 +86,7 @@ def generate_data(self, i: int):
                            self.use_gpu, self.use_cupy,
                            *self.iprofiles_gen_args)
     if self.use_backet:
-        obj_data = self.xp.sum(obj_img)
+        obj_data = self.backend.sum(obj_img)
     else:
         obj_data = \
             obj_img[self.npoints // 2, self.npoints // 2]
@@ -105,7 +105,7 @@ def generate_data_exp(self, i, path):
                            self.use_gpu, self.use_cupy,
                            *self.iprofiles_gen_args)
     if self.use_backet:
-        obj_data = self.xp.sum(obj_img)
+        obj_data = self.backend.sum(obj_img)
     else:
         obj_data = \
             obj_img[self.npoints // 2, self.npoints // 2]
@@ -146,7 +146,7 @@ class GIEmulator(GIExpDataProcessor):
     binning_order: int = 1
     img_prefix: str = ''
 
-    xp: object = np
+    backend: object = np
     tcpoints: int = 10
 
     def __post_init__(self):
@@ -156,7 +156,7 @@ class GIEmulator(GIExpDataProcessor):
 
         """
         if self.use_cupy and _using_cupy:
-            self.xp = cp
+            self.backend = cp
             if not self.use_gpu:
                 log.warn(
                     f'{type(self).__name__}.use_cupy is True, {type(self).__name__}.use_gpu set to True')
@@ -169,7 +169,7 @@ class GIEmulator(GIExpDataProcessor):
             REF_CROP=self.expdata_crop,
             BINNING=self.binning_order)
 
-        self.obj_data = self.xp.empty(self.imgs_number, dtype=np.float32)
+        self.obj_data = self.backend.empty(self.imgs_number, dtype=np.float32)
         if self.use_expdata:
             ny, nx = (crop_shape(
                 self.settings.REF_CROP) // self.binning_order).astype(int)
@@ -180,7 +180,7 @@ class GIEmulator(GIExpDataProcessor):
                 log.warn(
                     f'{type(self).__name__}.npoints is redefined from REF_CROP. npoints = {nx}')
                 self.npoints = nx
-        self.ref_data = self.xp.empty(
+        self.ref_data = self.backend.empty(
             (self.imgs_number, self.npoints, self.npoints), dtype=np.float32)
         """
         Здесь создается список объектных и референсных изображений
@@ -207,9 +207,9 @@ class GIEmulator(GIExpDataProcessor):
         print()
         log.info(
             f'Obj and ref data generated. Elapsed time {(time.time() - t):.3f} s')
-        self.gi = self.xp.zeros_like(self.ref_data[0])
+        self.gi = self.backend.zeros_like(self.ref_data[0])
         self.Nx = self.Ny = self.ghost_data.shape[0]
-        self.sc = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
-        self.tc = self.xp.ones(self.settings.TCPOINTS)
-        self.cd = self.xp.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self.sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self.tc = self.backend.ones(self.settings.TCPOINTS)
+        self.cd = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.times = np.arange(self.tcpoints)
