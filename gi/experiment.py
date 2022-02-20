@@ -67,37 +67,91 @@ def getbackend(obj: object):
 
 def maybe_dask(obj):
     if 'dask' in str(type(obj)):
-        return obj.compute()
+        return obj.compute(sheduler='processes', memory_limit='4GB')
     return obj
 
 
-def blocked3d(func):
-    """
-    Decorator to blocked (chunked) calculations.
-    It gives the 2nd argument of the given `func`
-    and runs the `func` in `map_blocks` method
+def autocorr1d(data, i, backend=None):
+    if backend is None:
+        backend = getbackend(data)
+    obj_data = data[:-i]
+    ref_data = data[i:]
+    od = obj_data - obj_data.mean(dtype=np.float32)
+    rd = ref_data - ref_data.mean(dtype=np.float32)
+    s1 = (od * rd).sum()
+    s2 = backend.linalg.norm(od) * backend.linalg.norm(rd)
+    res = backend.nan_to_num(s1 / s2)
+    # Release memory
+    del s1
+    del s2
+    del rd
+    del od
 
-    Parameters
-    ----------
-    func : callable
-        Callable function where the 2nd argument is a `dask.array`.
+    if backend.__name__ == 'cupy':
+        cp.get_default_memory_pool().free_all_blocks()
 
-    Returns
-    -------
-    callable
-        Decorated function.
+    return res
 
-    """
-    def wrapper(*args, **kwargs):
 
-        ref_module = type(args[1]).__module__.split('.')[0]
-        if ref_module == 'dask':
-            return args[1].map_blocks(
-                lambda data: func(args[0], data, *args[2:], **kwargs),
-                drop_axis=(0,)).compute()
-        return func(*args, **kwargs)
+def corr1d3d(obj_data, ref_data, backend=None):
+    if backend is None:
+        backend = getbackend(ref_data)
+    od = obj_data - obj_data.mean(dtype=np.float32)
+    rm = ref_data.mean(axis=0, dtype=np.float32)
+    rd = ref_data - rm
+    s1 = backend.einsum('i,ijk->jk', od, rd, dtype=np.float32)
+    s2 = backend.linalg.norm(od)
+    s3 = backend.linalg.norm(rd, axis=0) - rm
+    res = backend.nan_to_num(s1 / s2 / s3)
+    # Release memory
+    del s1
+    del s2
+    del s3
+    del rm
+    del od
+    del rd
 
-    return wrapper
+    if backend.__name__ == 'cupy':
+        cp.get_default_memory_pool().free_all_blocks()
+
+    return res
+
+
+def FWHM(data1d, Xc=None, backend=None):
+    if backend is None:
+        backend = getbackend(data1d)
+    return backend.sum(data1d > 0.5)
+
+
+def xycorr_width(sc, p=None, backend=None):
+    if backend is None:
+        backend = getbackend(sc)
+    sc[sc < 0.5] = 0
+    if backend.all(sc == 0):
+        return backend.asarray([np.nan, np.nan])
+    if p is None:
+        ny, nx = sc.shape
+        # Calculate centroid
+        Y, X = backend.mgrid[-ny // 2:ny // 2, -nx // 2:nx // 2]
+        Xc = int(backend.average(X, weights=sc)) + nx // 2
+        Yc = int(backend.average(Y, weights=sc)) + ny // 2
+    else:
+        Yc, Xc = p
+    xslice = sc[:, Xc]
+    yslice = sc[Yc]
+    return backend.asarray(
+        [FWHM(xslice, Xc, backend), FWHM(yslice, Yc, backend)])
+
+
+def xycorr(self, p, w):
+    x, y = p
+    lx = max(x - w // 2, 0)
+    ly = max(y - w // 2, 0)
+    tx = min(x + w // 2, self.Nx)
+    ty = min(y + w // 2, self.Ny)
+    rd = maybe_dask(self.ref_data[:, ly:ty, lx:tx])
+    sc = corr1d3d(rd[:, y - ly, x - lx], rd)
+    return xycorr_width(sc, backend=self.backend)
 
 
 def low_res(img, n):
@@ -322,68 +376,6 @@ def get_ref_imgnum(ref_path: str, settings: GISettings):
     return imread(ref_path, settings.BINNING, settings.REF_CROP)
 
 
-def autocorr1d(data, i, backend=None):
-    if backend is None:
-        backend = getbackend(data)
-    obj_data = data[:-i]
-    ref_data = data[i:]
-    od = obj_data - obj_data.mean(dtype=np.float32)
-    rd = ref_data - ref_data.mean(dtype=np.float32)
-    s1 = (od * rd).sum()
-    s2 = backend.linalg.norm(od) * backend.linalg.norm(rd)
-    return backend.nan_to_num(s1 / s2)
-
-
-@blocked3d
-def corr1d3d(obj_data, ref_data, backend=None):
-    if backend is None:
-        backend = getbackend(obj_data)
-    log.debug(
-        'Compute correlation function using `np.einsum`')
-    od = obj_data - obj_data.mean(dtype=np.float32)
-    rm = ref_data.mean(axis=0, dtype=np.float32)
-    s1 = backend.einsum('i,ijk->jk', od, ref_data, dtype=np.float32)
-    s2 = backend.linalg.norm(od) * (backend.linalg.norm(ref_data, axis=0) - rm)
-    return backend.nan_to_num(s1 / s2)
-
-
-def FWHM(data1d, Xc=None, backend=None):
-    if backend is None:
-        backend = getbackend(data1d)
-    return backend.sum(data1d > 0.5)
-
-
-def xycorr_width(sc, p=None, backend=None):
-    if backend is None:
-        backend = getbackend(sc)
-    sc[sc < 0.5] = 0
-    if backend.all(sc == 0):
-        return backend.asarray([np.nan, np.nan])
-    if p is None:
-        ny, nx = sc.shape
-        # Calculate centroid
-        Y, X = backend.mgrid[-ny // 2:ny // 2, -nx // 2:nx // 2]
-        Xc = int(backend.average(X, weights=sc)) + nx // 2
-        Yc = int(backend.average(Y, weights=sc)) + ny // 2
-    else:
-        Yc, Xc = p
-    xslice = sc[:, Xc]
-    yslice = sc[Yc]
-    return backend.asarray(
-        [FWHM(xslice, Xc, backend), FWHM(yslice, Yc, backend)])
-
-
-def xycorr(self, p, w):
-    x, y = p
-    lx = max(x - w // 2, 0)
-    ly = max(y - w // 2, 0)
-    tx = min(x + w // 2, self.Nx)
-    ty = min(y + w // 2, self.Ny)
-    rd = maybe_dask(self.ref_data[:, ly:ty, lx:tx])
-    sc = corr1d3d(rd[:, y - ly, x - lx], rd)
-    return xycorr_width(sc, backend=self.backend)
-
-
 class ObjRefGenerator:
 
     backend = np
@@ -603,8 +595,8 @@ class GIExpDataProcessor:
         log.info('Calculating ghost image')
         t = time.time()
 
-        self.gi = corr1d3d(self.obj_data[data_start:data_end],
-                           self.ref_data[data_start:data_end])
+        self.gi = maybe_dask(corr1d3d(self.obj_data[data_start:data_end],
+                           self.ref_data[data_start:data_end]))
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -622,9 +614,9 @@ class GIExpDataProcessor:
         if y == 0:
             y = self.Ny // 2
         self.sc_point = (y, x)
-        point_data = self.ref_data[:, y, x]
-        self.sc = corr1d3d(
-            point_data, self.ref_data if w is None else self.ref_data[:, y-w:y+w, x-w:x+w])
+        point_data = maybe_dask(self.ref_data[:, y, x])
+        self.sc = maybe_dask(corr1d3d(
+            point_data, self.ref_data if w is None else self.ref_data[:, y-w:y+w, x-w:x+w]))
         log.info(
             f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
@@ -662,8 +654,8 @@ class GIExpDataProcessor:
         points = np.mgrid[
             (self.Nx - nx) // 2:(self.Nx + nx) // 2,
             (self.Ny - ny) // 2:(self.Ny + ny) // 2].T.reshape((-1, 2))
-        for i, p in tqdm(enumerate(points), position=0, leave=True):
-            self._sc_widths[i] = xycorr(self, p, window_points)
+        for i in tqdm(range(points.size // 2), position=0, leave=True):
+            self._sc_widths[i] = xycorr(self, points[i], window_points)
         print()
         self._sc_widths = self._sc_widths.swapaxes(1, 0).reshape((2, ny, nx))
         log.info(
@@ -683,7 +675,7 @@ class GIExpDataProcessor:
 
         ravel_data = maybe_dask(self.ref_data.mean(axis=(1, 2)))
         self.tc[1:] = self.backend.asarray(
-            [autocorr1d(ravel_data, i, self.backend) for i in self.backend.arange(1, tcpoints)])
+            [autocorr1d(ravel_data, i, self.backend) for i in np.arange(1, tcpoints)])
         log.info(
             f'Time correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
