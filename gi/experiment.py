@@ -2,17 +2,15 @@
 '''
 Created on Mon Jun  7 17:40:40 2021
 
-@author: von.gostev
+@author: Pavel Gostev
 '''
 from os import listdir
 from os.path import isfile, join, dirname, realpath, basename
-from types import ModuleType
 import sys
 import time
 import numpy as np
 from functools import cached_property
 from tqdm import tqdm
-import psutil
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
@@ -56,7 +54,7 @@ IMG_IMG_DATA = 1
 IMG_NUM_DATA = 2
 
 
-def getbackend(obj: object) -> ModuleType:
+def getbackend(obj: object):
     module_name = type(obj).__module__.split('.')[0]
     if module_name in ['numpy', 'cupy']:
         return __import__(module_name)

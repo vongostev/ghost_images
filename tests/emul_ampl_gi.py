@@ -2,7 +2,7 @@
 """
 Created on Wed Jan 19 16:12:24 2022
 
-@author: von.gostev
+@author: Pavel Gostev
 """
 import __init__
 from gi import GIEmulator

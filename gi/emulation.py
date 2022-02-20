@@ -2,7 +2,7 @@
 """
 Created on Mon Jun  7 18:12:13 2021
 
-@author: vonGostev
+@author: Pavel Gostev
 """
 import sys
 import time

@@ -2,7 +2,7 @@
 """
 Created on Mon Jun  7 20:14:57 2021
 
-@author: Дима
+@author: Pavel Gostev
 """
 import __init__
 import matplotlib.pyplot as plt

@@ -1,0 +1,6 @@
+numpy
+cupy
+dask[array]
+tqdm
+cv2
+joblib
