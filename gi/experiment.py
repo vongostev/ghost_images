@@ -114,6 +114,8 @@ def corr1d3d(obj_data, ref_data, backend=None):
     if backend.__name__ == 'cupy':
         cp.get_default_memory_pool().free_all_blocks()
 
+    res[res > 1e308] = 0
+    res[res < -1e308] = 0
     return res
 
 
@@ -216,7 +218,9 @@ class GISettings:
 
 def sort_by_num(fname, prefix='pattern'):
     name = basename(fname).split('.')[0]
-    num = int(name.replace(prefix, ''))
+    num = name.replace(prefix, '')
+    if num == '':
+        num = '0'
     return int(num)
 
 
@@ -242,7 +246,8 @@ def find_images(dir_name: str, img_num: str, img_format: str, img_prefix: str):
 
     """
     img_list = [join(dir_name, f) for f in listdir(dir_name)
-                if isfile(join(dir_name, f)) and f.endswith(img_format)]
+                if isfile(join(dir_name, f)) and img_prefix in f
+                and f.endswith(img_format)]
 
     def fsort(s): return sort_by_num(s, img_prefix)
     img_list = sorted(img_list, key=fsort) if img_prefix else img_list
