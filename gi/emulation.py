@@ -194,7 +194,7 @@ class GIEmulator(GIExpDataProcessor, __GIEmulatorDefault):
                 log.warn(
                     f'{type(self).__name__}.npoints is redefined from REF_CROP. npoints = {nx}')
                 self.npoints = nx
-                
+
         self.Ny = self.Nx = self.npoints
         self._allocate_data()
         self.ref_data = self.ref_data.astype(np.float32)
