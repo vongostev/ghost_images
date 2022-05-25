@@ -116,3 +116,6 @@ dmypy.json
 *.png
 *.npz
 *.lock
+*.lyx#
+*.lyx~
+*.lyx

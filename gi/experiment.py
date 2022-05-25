@@ -101,7 +101,7 @@ def corr1d3d(obj_data, ref_data, backend=None):
     rd = ref_data - rm
     s1 = backend.einsum('i,ijk->jk', od, rd, dtype=np.float32)
     s2 = backend.linalg.norm(od)
-    s3 = backend.linalg.norm(rd, axis=0) - rm
+    s3 = backend.linalg.norm(rd, axis=0)# - rm
     res = backend.nan_to_num(s1 / s2 / s3)
     # Release memory
     del s1

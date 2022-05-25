@@ -20,11 +20,11 @@ area_size = 120
 wl0 = 0.532
 
 
-def get_builders(area_size, npoints, a: float = 1.,
-                 dims: int = 4,
-                 layers: int = 1,
-                 core_pitch: float = 5,
-                 central_core_radius: float = 0):
+def get_radial_structure(area_size, npoints, a: float = 1.,
+                         dims: int = 4,
+                         layers: int = 1,
+                         core_pitch: float = 5,
+                         central_core_radius: float = 0):
 
     dh = 1.*area_size/(npoints-1.)
 
@@ -42,8 +42,8 @@ def get_builders(area_size, npoints, a: float = 1.,
          npoints // 2 + int(r * np.cos(t))]
         for t in _a] for r, _a in zip(pos_radiuses, pos_angles)]
     cores_coords = sum(cores_coords, [])
-    # cores_radiuses = [central_core_radius] + [a] * (len(cores_coords) - 1)
-    return np.unique(cores_coords, axis=0), a
+    cores_coords = np.unique(cores_coords, axis=0)
+    return cores_coords, a
 
 
 def get_indxs_and_profile(
@@ -92,9 +92,6 @@ def random_fbundle(X, Y, cores_num, cores_coords, core_radius, cc, gaussian,
 
     mod = amplitudes * (backend.cos(phases) + 1j * backend.sin(phases))
 
-    # gauss_profiles = backend.tensordot(mod, gaussian, axes=0)
-    # gauss_profiles = gauss_profiles.reshape((cores_num, 2 * _nh, 2 * _nh))
-
     for k in range(len(cc)):
         li, ti, lj, tj = cc[k]
         n[li:ti, lj:tj] += gaussian * mod[k]
@@ -109,9 +106,8 @@ simdata = {}
 nimgs = [1000]
 methods = ['ap']
 
-
 if __name__ == "__main__":
-    builders = get_builders(
+    builders = get_radial_structure(
         area_size,
         npoints,
         a=1.5,
@@ -147,7 +143,8 @@ if __name__ == "__main__":
 
                 fig, axes = plt.subplots(1, 2, figsize=(12, 6))
                 axes[0].imshow(test._np(test.ref_data[0]))
-                axes[0].set_title(f'Intensity Profile on z={z} um', fontsize=16)
+                axes[0].set_title(
+                    f'Intensity Profile on z={z} um', fontsize=16)
                 axes[1].imshow(test.xycorr_data)
                 axes[1].set_title(f'CorrFun on z={z} um', fontsize=16)
                 # axes[2].imshow(test.ghost_data)
@@ -167,3 +164,6 @@ if __name__ == "__main__":
                 del test
 
     # np.savez_compressed('fs_simdata_200121', **simdata)
+    plt.plot(z_refs, [x.get()[0] for x in xyc_widths], 'o-')
+    plt.plot(z_refs, [x.get()[1] for x in xyc_widths], 'o-')
+    plt.show()
