@@ -13,37 +13,11 @@ from gi.emulation import GIEmulator, log
 import cupy as cp
 
 from lightprop2d import Beam2D
-
+from fiber_bundle import get_randomized_center_square_structure, get_radial_structure
 
 npoints = 1024
 area_size = 120
 wl0 = 0.532
-
-
-def get_radial_structure(area_size, npoints, a: float = 1.,
-                         dims: int = 4,
-                         layers: int = 1,
-                         core_pitch: float = 5,
-                         central_core_radius: float = 0):
-
-    dh = 1.*area_size/(npoints-1.)
-
-    # A grid for layers
-    lgrid = np.arange(layers + 1)
-    # Angles for positions of cores in one layer
-    pos_angles = [
-        np.arange(0, 2 * np.pi, 2 * np.pi / dims / lnum) for lnum in lgrid]
-    # Radius-vector modules of cores centrums
-    pos_radiuses = lgrid * int((core_pitch + 2 * a) // dh)
-    pos_radiuses[1:] += int((central_core_radius - a) // dh)
-    # Coordinates of cores as all combinations of radiuses and angles
-    cores_coords = [[
-        [npoints // 2 + int(r * np.sin(t)),
-         npoints // 2 + int(r * np.cos(t))]
-        for t in _a] for r, _a in zip(pos_radiuses, pos_angles)]
-    cores_coords = sum(cores_coords, [])
-    cores_coords = np.unique(cores_coords, axis=0)
-    return cores_coords, a
 
 
 def get_indxs_and_profile(
@@ -99,7 +73,7 @@ def random_fbundle(X, Y, cores_num, cores_coords, core_radius, cc, gaussian,
     return n
 
 
-z_refs = [0, 10, 20, 30, 40, 50, 100, 150, 200, 250, 300]
+z_refs = [*np.arange(0, 51, 2), 100, 150, 200, 250]
 xyc_widths = []
 simdata = {}
 
@@ -113,10 +87,14 @@ if __name__ == "__main__":
         a=1.5,
         core_pitch=0.25,
         dims=6,
-        layers=14,
+        layers=7,
         central_core_radius=1.5)
+    # builders = get_randomized_center_square_structure(
+    #     area_size, npoints, a=1.5, layers=20, core_pitch=0.25)
+    log.info("Fiber structure created")
     pre_calcs = get_indxs_and_profile(
         *builders, area_size, npoints, wl0, backend=cp)
+    log.info("Pre-calculations completed")
 
     cores_num = len(builders[0])
 
@@ -150,7 +128,7 @@ if __name__ == "__main__":
                 # axes[2].imshow(test.ghost_data)
                 # axes[2].set_title(f'Test GI on z={z} um')
                 plt.savefig(
-                    f'data_z{z}um_nimg{nimg}_method_{method}.png', dpi=300)
+                    f'data_z{z}um_nimg{nimg}_method_{method}_radial.png', dpi=300)
                 plt.show()
 
                 xyc_widths.append(test.xycorr_width)
@@ -164,6 +142,9 @@ if __name__ == "__main__":
                 del test
 
     # np.savez_compressed('fs_simdata_200121', **simdata)
+    z_refs[0] = 1
     plt.plot(z_refs, [x.get()[0] for x in xyc_widths], 'o-')
-    plt.plot(z_refs, [x.get()[1] for x in xyc_widths], 'o-')
+    plt.semilogx(z_refs, [x.get()[1] for x in xyc_widths], 'o-')
+    plt.xlabel("Distance, um")
+    plt.ylabel("CF width")
     plt.show()

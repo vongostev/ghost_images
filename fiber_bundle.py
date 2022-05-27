@@ -43,7 +43,7 @@ def get_radial_structure(area_size: float, npoints: int, a: float = 1.,
             [npoints // 2 + int(r * np.sin(t)),
              npoints // 2 + int(r * np.cos(t))]
             for t in _a])
-    cores_coords = np.unique(np.array(cores_coords, dtype=np.int32), axis=0)
+    cores_coords = np.unique(cores_coords, axis=0)
     return cores_coords, a
 
 
@@ -79,14 +79,15 @@ def get_rectangle_structure(
 @nb.njit(fastmath=True, nogil=True, cache=True)
 def block_centers_and_dims(offset, npoints, layers, core_diameter, nblocks):
     block_layers = int(layers // nblocks)
-    block_halfsize = int((npoints - 2 * offset + 2 * core_diameter) // (nblocks * 2))
+    block_halfsize = int(
+        (npoints - 2 * offset + 2 * core_diameter) // (nblocks * 2))
 
     coords = np.arange(offset + block_halfsize, npoints -
                        offset, block_halfsize * 2)
     return np.array([[y, x] for x in coords for y in coords]), block_layers
 
 
-@nb.njit(fastmath=True, nogil=True, cache=True, parallel=True)
+@nb.njit(fastmath=True, nogil=True, cache=True)
 def get_randomized_square_block(
         indx_center, core_diameter, core_pitch, layers):
 
@@ -94,16 +95,16 @@ def get_randomized_square_block(
     dn = core_diameter + core_pitch
     size_x = size_y = int((layers) * dn) + core_diameter
     cores_coords = np.zeros((N, 2), dtype=np.float32)
-    i = 0
 
     for i in range(N):
         can_added = False
         while not can_added:
-            x = np.random.randint(- size_x // 2 + core_pitch, size_x // 2 - core_pitch)
-            y = np.random.randint(- size_y // 2 + core_pitch, size_y // 2 - core_pitch)
+            x = np.random.randint(- size_x // 2 + core_pitch,
+                                  size_x // 2 - core_pitch)
+            y = np.random.randint(- size_y // 2 + core_pitch,
+                                  size_y // 2 - core_pitch)
             p = np.asarray([x, y])
             can_added = True
-            # pf = p.astype(np.float32)
             for p1 in cores_coords[:i+1]:
                 if np.linalg.norm(p - p1) < core_diameter:
                     can_added = False
@@ -114,7 +115,7 @@ def get_randomized_square_block(
     return cores_coords + indx_center
 
 
-@nb.njit(fastmath=True, nogil=True, cache=True, parallel=True)
+@nb.njit(fastmath=True, nogil=True, cache=True)
 def get_randomized_square_structure(
         area_size: float, npoints: int, a: float,
         layers: int, core_pitch: float, nblocks: int = 1):
@@ -123,15 +124,69 @@ def get_randomized_square_structure(
     dh = 1.*area_size/(npoints-1.)
     core_diameter = 2 * a // dh
     core_pitch = core_pitch // dh
-    offset = int((npoints - (core_diameter + core_pitch) * layers - 2 *core_pitch) // 2)
+    offset = int((npoints - (core_diameter + core_pitch)
+                 * layers - 2 * core_pitch) // 2)
     centers_block, layers_block = block_centers_and_dims(
         offset, npoints, layers, core_diameter, nblocks)
     n_block = layers_block ** 2
     cores_coords = np.zeros((N, 2), dtype=np.float32)
     for i, indx_center in enumerate(centers_block):
         coords_block = get_randomized_square_block(
-             indx_center, core_diameter, core_pitch, layers_block)
+            indx_center, core_diameter, core_pitch, layers_block)
         cores_coords[i * n_block: (i + 1) * n_block] = coords_block
+
+    return cores_coords.astype(np.int64), a
+
+
+@nb.njit(fastmath=True, nogil=True, cache=True)
+def get_randomized_center_square_structure(
+        area_size: float, npoints: int, a: float,
+        layers: int, core_pitch: float):
+
+    N = layers ** 2
+    dh = 1.*area_size/(npoints-1.)
+    core_radius = a // dh
+    core_diameter = 2 * core_radius
+    core_pitch = core_pitch // dh
+    core_placesize = core_diameter + core_pitch
+    size_x = size_y = int(
+        (layers) * (core_diameter + core_pitch)) + core_diameter
+
+    cores_coords = np.zeros((N, 2), dtype=np.float32)
+    cores_coords[0, :] = npoints // 2
+
+    layer = 1
+    sq_size = 1
+    offset = 0
+
+    for i in range(1, N):
+        can_added = False
+        points_added = sq_size ** 2
+        # print(i, layer, sq_size, points_added, offset)
+        j = 0
+        while not can_added:
+            x = np.random.choice(np.array([-1, 1])) * np.random.randint(
+                0,  # core_placesize * (layer - 1),
+                core_placesize * layer + core_placesize + 1 + offset)
+            y = np.random.choice(np.array([-1, 1])) * np.random.randint(
+                0,  # core_placesize * (layer - 1),
+                core_placesize * layer + core_placesize + 1 + offset)
+            p = np.asarray([x, y]) + npoints // 2
+            can_added = True
+            j += 1
+            for k in nb.prange(i):
+                p1 = cores_coords[k]
+                if np.linalg.norm(p - p1) < core_diameter:
+                    can_added = False
+                    break
+            if j > 100000:
+                offset += core_pitch
+            if can_added:
+                cores_coords[i] = p
+                if i == (sq_size + 2) ** 2:
+                    sq_size += 2
+                    layer += 1
+                    # print(i, layer, sq_size, points_added)
 
     return cores_coords.astype(np.int64), a
 
@@ -154,37 +209,41 @@ def get_indxs_and_profile(
     return b.X, b.Y, _cc, core_profile
 
 
-@ nb.njit(fastmath=True, nogil=True, cache=True, parallel=True)
+@nb.njit(fastmath=True, nogil=True, cache=True, parallel=True)
 def fiber_bundle(X, Y, cc, profile, cores_coords):
     n = np.zeros((X.size, Y.size), dtype=np.complex64)
     N = len(cc)
-    for k in range(N):
+    for k in nb.prange(N):
         li, ti, lj, tj = cc[k]
-        n[li:ti, lj:tj] += profile
+        try:
+            n[li:ti, lj:tj] += profile
+        except:
+            print(cc[k])
 
     return n
 
 
-t = time.time()
+if __name__ == "__main__":
+    t = time.time()
 
-# builders = get_radial_structure(
-#     area_size,
-#     npoints,
-#     a=1.5,
-#     core_pitch=0.25,
-#     dims=6,
-#     layers=14,
-#     central_core_radius=1.5)
-builders = get_randomized_square_structure(
-    area_size, npoints, a=1.5, layers=20, core_pitch=0.25, nblocks=1)
-pre_calcs = get_indxs_and_profile(
-    *builders, area_size, npoints, wl0)
-fbprofile = fiber_bundle(*pre_calcs, builders[0])
-print(time.time() - t)
+    builders = get_radial_structure(
+        area_size,
+        npoints,
+        a=1.5,
+        core_pitch=0.25,
+        dims=6,
+        layers=8,
+        central_core_radius=1.5)
+    # builders = get_randomized_center_square_structure(
+    #     area_size, npoints, a=1.5, layers=15, core_pitch=0.25)
+    pre_calcs = get_indxs_and_profile(
+        *builders, area_size, npoints, wl0)
+    fbprofile = fiber_bundle(*pre_calcs, builders[0])
+    print(time.time() - t)
 
-img = plt.imshow(np.abs(fbprofile))
-img.set_cmap('gray')
-plt.tight_layout()
-plt.axis('off')
-plt.show()
-plt.savefig('fiber_bundle.png', dpi=300)
+    img = plt.imshow(np.abs(fbprofile))
+    img.set_cmap('gray')
+    plt.tight_layout()
+    plt.axis('off')
+    # plt.savefig('fiber_bundle.png', dpi=300)
+    plt.show()
