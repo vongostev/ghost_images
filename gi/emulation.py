@@ -67,11 +67,12 @@ def generate_beams(area_size, npoints, wl,
         obj = cached_ref_obj['obj']
         obj.z = 0
         obj._update_obj(ref.field.copy(), ref.spectrum.copy())
+
+    obj.propagate(z_obj)
+    ref.propagate(z_ref)
+
     if object_gen is not None:
         obj.coordinate_filter(f_gen=object_gen, fargs=object_gen_args)
-
-    ref.propagate(z_ref)
-    obj.propagate(z_obj)
 
     return ref.iprofile, obj.iprofile
 

@@ -6,6 +6,7 @@ Created on Mon Dec 27 14:22:29 2021
 """
 import __init__
 import numpy as np
+import cv2
 from lightprop2d import rectangle_hole, gaussian_beam, round_hole
 
 import matplotlib.pyplot as plt
@@ -13,9 +14,9 @@ from gi.emulation import GIEmulator, log
 import cupy as cp
 
 from lightprop2d import Beam2D
-from fiber_bundle import get_randomized_center_square_structure, get_radial_structure
+from fiber_bundle import get_randomized_center_square_structure, get_radial_structure, mira_mask
 
-npoints = 1024
+npoints = 512
 area_size = 120
 wl0 = 0.532
 
@@ -73,24 +74,24 @@ def random_fbundle(X, Y, cores_num, cores_coords, core_radius, cc, gaussian,
     return n
 
 
-z_refs = [*np.arange(0, 51, 2), 100, 150, 200, 250]
+z_refs = [10, 20, 30] #[*np.arange(0, 51, 2), 100, 150, 200, 250][:1]
 xyc_widths = []
 simdata = {}
 
-nimgs = [1000]
+nimgs = [4096]
 methods = ['ap']
 
 if __name__ == "__main__":
-    builders = get_radial_structure(
-        area_size,
-        npoints,
-        a=1.5,
-        core_pitch=0.25,
-        dims=6,
-        layers=7,
-        central_core_radius=1.5)
-    # builders = get_randomized_center_square_structure(
-    #     area_size, npoints, a=1.5, layers=20, core_pitch=0.25)
+    # builders = get_radial_structure(
+    #     area_size,
+    #     npoints,
+    #     a=1.5,
+    #     core_pitch=0.25,
+    #     dims=6,
+    #     layers=7,
+    #     central_core_radius=1.5)
+    builders = get_randomized_center_square_structure(
+        area_size, npoints, a=1.5, layers=20, core_pitch=0.25)
     log.info("Fiber structure created")
     pre_calcs = get_indxs_and_profile(
         *builders, area_size, npoints, wl0, backend=cp)
@@ -109,24 +110,24 @@ if __name__ == "__main__":
                                   init_gen_args=(
                                       cores_num, *builders, *pre_calcs, False, method, cp),
                                   z_ref=z,
-                                  object_gen=rectangle_hole,
-                                  object_gen_args=(40, 40),
+                                  object_gen=mira_mask,
                                   parallel_njobs=1,
+                                  binning_order=2,
                                   use_gpu=True,
                                   use_cupy=True,
                                   use_dask=True)
                 # test.calculate_timecorr()
                 test.calculate_xycorr()  # window_points=128)
-                # test.calculate_ghostimage()
+                test.calculate_ghostimage()
 
-                fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+                fig, axes = plt.subplots(1, 3, figsize=(16, 6))
                 axes[0].imshow(test._np(test.ref_data[0]))
                 axes[0].set_title(
                     f'Intensity Profile on z={z} um', fontsize=16)
                 axes[1].imshow(test.xycorr_data)
                 axes[1].set_title(f'CorrFun on z={z} um', fontsize=16)
-                # axes[2].imshow(test.ghost_data)
-                # axes[2].set_title(f'Test GI on z={z} um')
+                axes[2].imshow(test.ghost_data)
+                axes[2].set_title(f'Test GI on z={z} um')
                 plt.savefig(
                     f'data_z{z}um_nimg{nimg}_method_{method}_radial.png', dpi=300)
                 plt.show()
