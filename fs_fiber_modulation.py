@@ -16,10 +16,6 @@ import cupy as cp
 from lightprop2d import Beam2D
 from fiber_bundle import get_randomized_center_square_structure, get_radial_structure, mira_mask
 
-npoints = 512
-area_size = 120
-wl0 = 0.532
-
 
 def get_indxs_and_profile(
         cores_coords, core_radius, area_size, npoints, wl0, backend=cp):
@@ -78,8 +74,11 @@ z_refs = [10, 20, 30] #[*np.arange(0, 51, 2), 100, 150, 200, 250][:1]
 xyc_widths = []
 simdata = {}
 
-nimgs = [4096]
+nimgs = [1024]
 methods = ['ap']
+npoints = 1024
+area_size = 160
+wl0 = 0.83
 
 if __name__ == "__main__":
     # builders = get_radial_structure(
@@ -91,7 +90,7 @@ if __name__ == "__main__":
     #     layers=7,
     #     central_core_radius=1.5)
     builders = get_randomized_center_square_structure(
-        area_size, npoints, a=1.5, layers=20, core_pitch=0.25)
+        area_size, npoints, a=2.5, layers=20, core_pitch=0.25)
     log.info("Fiber structure created")
     pre_calcs = get_indxs_and_profile(
         *builders, area_size, npoints, wl0, backend=cp)
@@ -112,10 +111,10 @@ if __name__ == "__main__":
                                   z_ref=z,
                                   object_gen=mira_mask,
                                   parallel_njobs=1,
-                                  binning_order=2,
+                                  binning_order=16,
                                   use_gpu=True,
                                   use_cupy=True,
-                                  use_dask=True)
+                                  use_dask=False)
                 # test.calculate_timecorr()
                 test.calculate_xycorr()  # window_points=128)
                 test.calculate_ghostimage()

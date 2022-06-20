@@ -12,7 +12,9 @@ import numpy as np
 from collections import namedtuple
 
 from lightprop2d import Beam2D
-from .experiment import find_images, get_ref_imgnum, GIExpDataProcessor, crop_shape, _using_dask
+from .experiment import (
+    find_images, get_ref_imgnum, GIExpDataProcessor,
+    crop_shape, _using_dask, low_res)
 
 from logging import Logger, StreamHandler, Formatter
 
@@ -38,7 +40,8 @@ cached_ref_obj = {'ref': None, 'obj': None}
 def generate_beams(area_size, npoints, wl,
                    init_field, init_field_gen, init_gen_args,
                    object_gen, object_gen_args,
-                   z_obj, z_ref, use_gpu, use_cupy, *args, **kwargs):
+                   z_obj, z_ref, use_gpu, use_cupy, binning_order,
+                   *args, **kwargs):
 
     if cached_ref_obj['ref'] is None:
         ref = Beam2D(area_size, npoints, wl,
@@ -74,7 +77,7 @@ def generate_beams(area_size, npoints, wl,
     if object_gen is not None:
         obj.coordinate_filter(f_gen=object_gen, fargs=object_gen_args)
 
-    return ref.iprofile, obj.iprofile
+    return low_res(ref.iprofile, binning_order, obj.xp), low_res(obj.iprofile, binning_order, obj.xp)
 
 
 def generate_data(self, i: int):
@@ -85,6 +88,7 @@ def generate_data(self, i: int):
                            self.object_gen, self.object_gen_args,
                            self.z_obj, self.z_ref,
                            self.use_gpu, self.use_cupy,
+                           self.binning_order,
                            *self.iprofiles_gen_args)
     if self.use_backet:
         obj_data = self.backend.sum(obj_img)
@@ -104,6 +108,7 @@ def generate_data_exp(self, i, path):
                            self.object_gen, self.object_gen_args,
                            self.z_obj, self.z_ref,
                            self.use_gpu, self.use_cupy,
+                           self.binning_order,
                            *self.iprofiles_gen_args)
     if self.use_backet:
         obj_data = self.backend.sum(obj_img)
@@ -195,8 +200,10 @@ class GIEmulator(GIExpDataProcessor, __GIEmulatorDefault):
                 log.warn(
                     f'{type(self).__name__}.npoints is redefined from REF_CROP. npoints = {nx}')
                 self.npoints = nx
-
-        self.Ny = self.Nx = self.npoints
+            self.Ny = self.Nx = self.npoints
+        else:
+            self.Ny = self.Nx = self.npoints // self.binning_order
+            
         self._allocate_data()
         self.ref_data = self.ref_data.astype(np.float32)
 

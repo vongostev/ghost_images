@@ -99,17 +99,20 @@ def corr1d3d(obj_data, ref_data, backend=None):
     od = obj_data - obj_data.mean(dtype=np.float32)
     rm = ref_data.mean(axis=0, dtype=np.float32)
     rd = ref_data - rm
+    del rm
+
     s1 = backend.einsum('i,ijk->jk', od, rd, dtype=np.float32)
     s2 = backend.linalg.norm(od)
+    del od
+
     s3 = backend.linalg.norm(rd, axis=0)# - rm
+    del rd
+
     res = backend.nan_to_num(s1 / s2 / s3)
     # Release memory
     del s1
     del s2
     del s3
-    del rm
-    del od
-    del rd
 
     if backend.__name__ == 'cupy':
         cp.get_default_memory_pool().free_all_blocks()
@@ -156,9 +159,12 @@ def xycorr(self, p, w):
     return xycorr_width(sc, backend=self.backend)
 
 
-def low_res(img, n):
+def low_res(img, n, backend=np):
     x, y = img.shape
-    return resize(img, (y // n, x // n))
+    if backend == np:
+        return resize(img, (y // n, x // n))
+    else:
+        return img.reshape((y // n, n, x // n, n)).mean(axis=(1,3))
     # return downscale_local_mean(img, (n, n))
 
 

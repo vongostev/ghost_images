@@ -18,10 +18,6 @@ from lightprop2d import Beam2D
 import time
 from functools import lru_cache
 
-npoints = 1024
-area_size = 120
-wl0 = 0.532
-
 
 def get_radial_structure(area_size: float, npoints: int, a: float = 1.,
                          dims: int = 4,
@@ -231,14 +227,14 @@ def fiber_bundle(X, Y, cc, profile):
 def collection_bundle(area_size, npoints, wl0, a, central_offset, radial=True):
     if radial:
         coords, a = get_radial_structure(
-            area_size, npoints, a, dims=4, layers=2, core_pitch=central_offset - a,
-            central_core_radius=central_offset)        
+            area_size, npoints, a, dims=4, layers=2, core_pitch=-8,#abs(central_offset - a),
+            central_core_radius=9)        
     else:
         coords, a = get_rectangle_structure(
             area_size, npoints, a, layers=(4, 4), core_pitch=central_offset - a)
     coords = sorted(coords, key=lambda x: np.linalg.norm(x - npoints // 2))
     pre_calcs = get_indxs_and_profile(
-        coords[-12:], a, area_size, npoints, wl0, profile_npoints=128)
+        coords[-12:], a, area_size, npoints, wl0, profile_npoints=256)
     return fiber_bundle(*pre_calcs)
 
 
@@ -248,17 +244,23 @@ def _mira_mask(X=0, Y=0):
     mask = np.abs(mask[..., 0].astype(float) - 255) / 255
     # mask = mask[50:562, 50:562]
     mask = mask[256:512, 256:512]
-    return np.kron(mask, np.ones((2, 2)))
+    return np.kron(mask, np.ones((4, 4)))
 
 
 def mira_mask(X, Y):
     return cp.asarray(_mira_mask(0, 0))
 
 
-measured = False
-mira = True
+measured = True
+collected = False
+mira = False
 
 if __name__ == "__main__":
+    
+    npoints = 1024
+    area_size = 160
+    wl0 = 0.83
+
     if mira:
         plt.imshow(_mira_mask())
         plt.show()
@@ -275,13 +277,14 @@ if __name__ == "__main__":
         #     central_core_radius=10)
         if measured:
             builders = get_randomized_center_square_structure(
-                area_size, npoints, a=1.5, layers=15, core_pitch=0.25)
+                area_size, npoints, a=2.5, layers=15, core_pitch=0.25)
             pre_calcs = get_indxs_and_profile(
                 *builders, area_size, npoints, wl0)
             fbprofile = fiber_bundle(*pre_calcs)
         else:
             fbprofile = np.zeros((npoints, npoints), dtype=np.complex128)
-        fbprofile += collection_bundle(area_size, npoints, wl0, 10, 6.5)
+        if collected:
+            fbprofile += collection_bundle(area_size, npoints, wl0, 25, 6.5 * 2.5/1.5, radial=not measured)
         print(time.time() - t)
     
         fig, ax = plt.subplots(1, 1, figsize=(5,5))
@@ -289,5 +292,5 @@ if __name__ == "__main__":
         img.set_cmap('gray')
         plt.tight_layout()
         plt.axis('off')
-        plt.savefig('fiber_bundle_collected.png', dpi=300, bbox_inches='tight')
+        plt.savefig('fiber_bundle.png', dpi=300, bbox_inches='tight')
         plt.show()
