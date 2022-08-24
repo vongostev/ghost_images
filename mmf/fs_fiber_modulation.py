@@ -27,7 +27,7 @@ def get_indxs_and_profile(
     x = b.X[_n - _nh:_n + _nh]
     y = b.Y[_n - _nh:_n + _nh]
     gaussian = round_hole(x, y, core_radius) * gaussian_beam(
-        x, y, 1, 0.5829260426150318)
+        x, y, 1, 0.5829260426150318 * 2.5)
 
     _cc = np.repeat(cores_coords, 2, axis=1)
     _cc[:, ::2] -= _nh
@@ -70,11 +70,11 @@ def random_fbundle(X, Y, cores_num, cores_coords, core_radius, cc, gaussian,
     return n
 
 
-z_refs = [10, 20, 30] #[*np.arange(0, 51, 2), 100, 150, 200, 250][:1]
+z_refs = [10,20,30,40,50] #[*np.arange(0, 51, 2), 100, 150, 200, 250][:1]
 xyc_widths = []
 simdata = {}
 
-nimgs = [1024]
+nimgs = [2048]
 methods = ['ap']
 npoints = 1024
 area_size = 160
@@ -109,6 +109,7 @@ if __name__ == "__main__":
                                   init_gen_args=(
                                       cores_num, *builders, *pre_calcs, False, method, cp),
                                   z_ref=z,
+                                  z_obj=z,
                                   object_gen=mira_mask,
                                   parallel_njobs=1,
                                   binning_order=16,
@@ -128,7 +129,7 @@ if __name__ == "__main__":
                 axes[2].imshow(test.ghost_data)
                 axes[2].set_title(f'Test GI on z={z} um')
                 plt.savefig(
-                    f'data_z{z}um_nimg{nimg}_method_{method}_radial.png', dpi=300)
+                    f'data_z{z}um_nimg{nimg}_method_{method}_square.png', dpi=300)
                 plt.show()
 
                 xyc_widths.append(test.xycorr_width)

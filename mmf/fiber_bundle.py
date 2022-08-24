@@ -240,7 +240,7 @@ def collection_bundle(area_size, npoints, wl0, a, central_offset, radial=True):
 
 @lru_cache
 def _mira_mask(X=0, Y=0):
-    mask = cv2.imread("mira.png")
+    mask = cv2.imread("mira_base.png")
     mask = np.abs(mask[..., 0].astype(float) - 255) / 255
     # mask = mask[50:562, 50:562]
     mask = mask[256:512, 256:512]
@@ -251,9 +251,9 @@ def mira_mask(X, Y):
     return cp.asarray(_mira_mask(0, 0))
 
 
-measured = True
+measured = False
 collected = False
-mira = False
+mira = True
 
 if __name__ == "__main__":
     
@@ -262,7 +262,12 @@ if __name__ == "__main__":
     wl0 = 0.83
 
     if mira:
-        plt.imshow(_mira_mask())
+        fig, ax = plt.subplots(1, 1, figsize=(5,5))
+        img = plt.imshow(_mira_mask())
+        img.set_cmap('gray')
+        plt.tight_layout()
+        plt.axis('off')
+        plt.savefig('mira.pdf', dpi=300, bbox_inches='tight', format='pdf')
         plt.show()
     else:
         t = time.time()
