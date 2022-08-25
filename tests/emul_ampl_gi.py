@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 npoints = 32
 wl0 = 0.632
-nimgs = npoints ** 2 * 4
+nimgs = npoints ** 2 * 8
 area_size = 1000
 
 test_objects = [
@@ -20,18 +20,18 @@ test_objects = [
     (filter_from_img('img/alum.png', npoints), ())
 ]
 
-for (obj, args) in test_objects:
+for i, (obj, args) in enumerate(test_objects):
     test = GIEmulator(area_size, npoints, wl0, nimgs=nimgs,
                       init_field_gen=random_wave,
                       init_gen_args=(1,),
                       object_gen=obj,
                       object_gen_args=args,
                       use_gpu=False,
-                      use_cupy=True,
+                      use_cupy=False,
                       use_dask=False
                       )
     test.calculate_all()
-    #test.calculate_xycorr_widths(nx=20, ny=20, window_points=32)
+    test.calculate_xycorr_widths(nx=16, ny=16, window_points=16)
 
     test.timecorr_data
     test.xycorr_data
@@ -51,6 +51,6 @@ for (obj, args) in test_objects:
     plt.semilogy(test.xycorr_data[test.npoints // 2])
     plt.show()
 
-    # plt.imshow(test.xycorr_widths_data.mean(axis=0))
-    # plt.colorbar()
-    # plt.show()
+    plt.imshow(test.xycorr_widths_data.mean(axis=0))
+    plt.colorbar()
+    plt.show()
