@@ -170,18 +170,12 @@ class GIEmulator(GIExpDataProcessor, __GIEmulatorDefault):
             raise ValueError(
                 'Non-positive images number `nimgs` is prohibited in the emulation. Set `nimgs` > 0')
 
-        if self.use_cupy and _using_cupy:
-            self.backend = cp
-            log.warn('`cupy` backend used. Be careful of GPU memory leak')
-            if not self.use_gpu:
-                log.warn(
-                    f'{type(self).__name__}.use_cupy is True, {type(self).__name__}.use_gpu set to True')
-                self.use_gpu = True
+        self._set_backend()
 
-        self.use_dask = self.use_dask and _using_dask
-        if self.use_dask:
-            log.warn('`dask.array` used. Be careful of non-computed things')
-            log.warn('`dask.array` may be slow on the small data')
+        if self.backend == cp and not self.use_gpu:
+            log.warn(
+                f'{type(self).__name__}.use_cupy is True, {type(self).__name__}.use_gpu set to True')
+            self.use_gpu = True
 
         SETS = namedtuple('settings',
                           ['TCPOINTS', 'REF_CROP', 'BINNING'])
@@ -203,7 +197,7 @@ class GIEmulator(GIExpDataProcessor, __GIEmulatorDefault):
             self.Ny = self.Nx = self.npoints
         else:
             self.Ny = self.Nx = self.npoints // self.binning_order
-            
+
         self._allocate_data()
         self.ref_data = self.ref_data.astype(np.float32)
 
@@ -228,9 +222,6 @@ class GIEmulator(GIExpDataProcessor, __GIEmulatorDefault):
         log.info(
             f'Obj and ref data generated. Elapsed time {(time.time() - t):.3f} s')
 
-        self.gi = self.backend.zeros_like(self.ref_data[0])
-        self.sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
-        self.tc = self.backend.ones(self.settings.TCPOINTS)
-        self.cd = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.times = np.arange(self.tcpoints)
+        self._allocate_outputs()
         self._make_blocked_ref_data()

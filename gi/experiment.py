@@ -4,6 +4,7 @@ Created on Mon Jun  7 17:40:40 2021
 
 @author: Pavel Gostev
 '''
+from typing import Union, Optional, Tuple
 from os import listdir
 from os.path import isfile, join, dirname, realpath, basename
 import sys
@@ -105,7 +106,7 @@ def corr1d3d(obj_data, ref_data, backend=None):
     s2 = backend.linalg.norm(od)
     del od
 
-    s3 = backend.linalg.norm(rd, axis=0)# - rm
+    s3 = backend.linalg.norm(rd, axis=0)  # - rm
     del rd
 
     res = backend.nan_to_num(s1 / s2 / s3)
@@ -164,7 +165,7 @@ def low_res(img, n, backend=np):
     if backend == np:
         return resize(img, (y // n, x // n))
     else:
-        return img.reshape((y // n, n, x // n, n)).mean(axis=(1,3))
+        return img.reshape((y // n, n, x // n, n)).mean(axis=(1, 3))
     # return downscale_local_mean(img, (n, n))
 
 
@@ -500,20 +501,10 @@ class GIExpDataProcessor:
     use_dask: bool = False
     dask_chunk_size: int = 128
 
-    _g2: float = None
-    _sc_widths: object = None
     backend: object = np
 
     def __post_init__(self):
-
-        if self.use_cupy and _using_cupy:
-            self.backend = cp
-            log.warn('`cupy` backend used. Be careful of GPU memory leak')
-
-        self.use_dask = self.use_dask and _using_dask
-        if self.use_dask:
-            log.warn('`dask.array` used. Be careful of non-computed things')
-            log.warn('`dask.array` may be slow on the small data')
+        self._set_backend()
 
         self.settings = GISettings(self.settings_file)
 
@@ -531,14 +522,10 @@ class GIExpDataProcessor:
         log.info(f'Reference images size is {self.Nx}x{self.Ny}')
 
         self._allocate_data()
-
-        self.gi = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
-        self.sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
         self.times = np.linspace(
             0, self.settings.TCPOINTS / self.settings.FREQ,
             self.settings.TCPOINTS)
-        self.tc = self.backend.ones(self.settings.TCPOINTS)
-        self.cd = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self._allocate_outputs()
 
         log.info('Loading obj and ref data')
         t = time.time()
@@ -555,6 +542,16 @@ class GIExpDataProcessor:
         log.info(
             f'Obj and ref data loaded. Elapsed time {(time.time() - t):.3f} s')
 
+    def _set_backend(self):
+        if self.use_cupy and _using_cupy:
+            self.backend = cp
+            log.warn('`cupy` backend used. Be careful of GPU memory leak')
+
+        self.use_dask = self.use_dask and _using_dask
+        if self.use_dask:
+            log.warn('`dask.array` used. Be careful of non-computed things')
+            log.warn('`dask.array` may be slow on the small data')
+
     def _allocate_data(self):
         """
         Здесь создается список объектных и референсных изображений
@@ -565,17 +562,27 @@ class GIExpDataProcessor:
         self.ref_data = self.backend.zeros((self.nimgs, self.Ny, self.Nx),
                                            dtype=np.uint8)
 
+    def _allocate_outputs(self):
+        self._gi = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self._sc = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self._tc = self.backend.ones(self.settings.TCPOINTS)
+        self._cd = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self._g2 = self.backend.zeros((self.Ny, self.Nx), dtype=np.float32)
+        self._sc_widths = self.backend.zeros(
+            (2, self.Ny, self.Nx), dtype=np.float32)
+        self._sc_point = None
+
     def _make_blocked_ref_data(self):
         if self.use_dask:
             self.ref_data = da.from_array(self.ref_data, chunks=(
                 None, self.dask_chunk_size, self.dask_chunk_size))
 
-    def _np(self, data):
+    def _np(self, data: Union[np.ndarray, cp.ndarray, da.Array]) -> np.ndarray:
         """Convert cupy or numpy arrays to numpy array.
 
         Parameters
         ----------
-        data : Tuple[numpy.ndarray, cupy.ndarray]
+        data : Union[numpy.ndarray, cupy.ndarray, dask.array.Array]
             Input data.
 
         Returns
@@ -593,28 +600,63 @@ class GIExpDataProcessor:
             return data.get()
         return data
 
-    def calculate_ghostimage(self, data_start=None, data_end=None):
-        '''
+    def calculate_ghostimage(self, data_start: Optional[int] = 0,
+                             data_end: Optional[int] = None):
+        """
         Расчет корреляции между последовательностью
         суммарных сигналов в объектном плече
         и поточечными последовательностями сигналов в референсном плече
-        '''
-        if data_start is None:
-            data_start = 0
+
+        Запись рассчитанного изображения в `self._gi`
+        Связанный публичный атрибут `self.ghost_data`
+
+        Parameters
+        ----------
+        data_start : Optional[int], optional
+            Start index of data processing. The default is 0.
+        data_end : Optional[int], optional
+            End index of data processing. The default is None.
+
+        Returns
+        -------
+        None.
+
+        """
+
         if data_end is None:
             data_end = self.nimgs
         log.info('Calculating ghost image')
         t = time.time()
 
-        self.gi = maybe_dask(corr1d3d(self.obj_data[data_start:data_end],
-                           self.ref_data[data_start:data_end]))
+        self._gi = maybe_dask(corr1d3d(self.obj_data[data_start:data_end],
+                                       self.ref_data[data_start:data_end]))
         log.info(
             f'Ghost image calculated. Elapsed time {(time.time() - t):.3f} s')
 
-    def calculate_xycorr(self, x=0, y=0, window_points: int = None):
-        '''
+    def calculate_xycorr(self, x: Optional[int] = 0,
+                         y: Optional[int] = 0,
+                         window_points: Optional[int] = None):
+        """
         Расчет функции когерентности или поперечной корреляции
-        '''
+
+        Запись рассчитанного изображения в `self._sc`
+        Связанный публичный атрибут `self.xycorr_data`
+
+        Parameters
+        ----------
+        x : Optional[int], optional
+            X coordinate of calculation. The default is 0 (`self.Nx`//2).
+        y : Optional[int], optional
+            Y coordinate of calculation. The default is 0 (`self.Ny`//2).
+        window_points : Optional[int], optional
+            Size of a window to calculate correlation function. The default is None.
+
+        Returns
+        -------
+        None.
+
+        """
+
         log.info('Calculating spatial correlation function')
         t = time.time()
 
@@ -624,31 +666,32 @@ class GIExpDataProcessor:
             x = self.Nx // 2
         if y == 0:
             y = self.Ny // 2
-        self.sc_point = (y, x)
+        self._sc_point = (y, x)
         point_data = maybe_dask(self.ref_data[:, y, x])
-        self.sc = maybe_dask(corr1d3d(
+        self._sc = maybe_dask(corr1d3d(
             point_data, self.ref_data if w is None else self.ref_data[:, y-w:y+w, x-w:x+w]))
         log.info(
             f'Spatial correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
-    def calculate_xycorr_widths(self, window_points: int = 10,
-                                nx: int = 10, ny: int = 10):
+    def calculate_xycorr_widths(self, window_points: Optional[int] = None,
+                                nx: Optional[int] = None,
+                                ny: Optional[int] = None):
         """
         Расчет ширин функции когерентности или
         поперечной корреляции для разных пикселей
 
         Parameters
         ----------
-        window_points : int, optional
+        window_points : Optional[int], optional
             Width of the calculation window (in points)
             for the each point of calculation.
-            The default is 50.
-        nx : int, optional
-            Number of points in x dimention. The default is 10.
+            The default is None.
+        nx : Optional[int], optional
+            Number of points in x dimention. The default is None.
             The centrum is in the centrum of self.ref_data images:
                 self.Nx // 2 - nx // 2 <= x < self.Nx // 2 + nx // 2
-        ny : int, optional
-            Number of points in y dimention. The default is 10.
+        ny : Optional[int], optional
+            Number of points in y dimention. The default is None.
             The centrum is in the centrum of self.ref_data images:
                 self.Ny // 2 - ny // 2 <= y < self.Ny // 2 + ny // 2
 
@@ -658,6 +701,13 @@ class GIExpDataProcessor:
         Two arrays with xy correlation function widths: by x  and by y.
 
         """
+        if window_points is None:
+            window_points = min(self.Nx, self.Ny)
+        if nx is None:
+            nx = self.Nx
+        if ny is None:
+            ny = self.Ny
+
         log.info(
             'Calculating spatial correlation function width in different pixels')
         t = time.time()
@@ -672,7 +722,25 @@ class GIExpDataProcessor:
         log.info(
             f'Spatial correlation function widths calculated. Elapsed time {(time.time() - t):.3f} s')
 
-    def calculate_timecorr(self, tcpoints=None):
+    def calculate_timecorr(self, tcpoints: Optional[int] = None):
+        """
+        Calculating time correlation function
+
+        Parameters
+        ----------
+        tcpoints : Optional[int], optional
+            Size of a window to calculate correlation function. The default is None.
+
+        Raises
+        ------
+        ValueError
+            Number of time correlation points is undefined.
+
+        Returns
+        -------
+        None.
+
+        """
         log.info('Calculating time correlation function')
         t = time.time()
 
@@ -685,15 +753,15 @@ class GIExpDataProcessor:
                     f'Please set {type(self).__name__}.settings.TCPOINTS or `tcpoints` argument')
 
         ravel_data = maybe_dask(self.ref_data.mean(axis=(1, 2)))
-        self.tc[1:] = self.backend.asarray(
+        self._tc[1:] = self.backend.asarray(
             [autocorr1d(ravel_data, i, self.backend) for i in np.arange(1, tcpoints)])
         log.info(
             f'Time correlation function calculated. Elapsed time {(time.time() - t):.3f} s')
 
     def calculate_contrast(self):
-        _gi = self.backend.abs(self.gi)
+        _gi = self.backend.abs(self._gi)
         _mean_gi = self.backend.min(_gi)
-        self.cd = (_gi - _mean_gi) / (_gi + _mean_gi)
+        self._cd = (_gi - _mean_gi) / (_gi + _mean_gi)
         log.info('Ghost image contrast calculated')
 
     def calculate_all(self):
@@ -703,53 +771,56 @@ class GIExpDataProcessor:
         self.calculate_timecorr()
         self.calculate_g2()
 
-    def calculate_g2(self, noise=0):
-        self._g2 = self.backend.mean((self.ref_data - noise)**2, axis=0) / \
-            self.backend.mean(self.ref_data - noise, axis=0)**2
+    def calculate_g2(self, noise_level: Optional[float] = 0):
+        self._g2 = self.backend.mean((self.ref_data - noise_level)**2, axis=0) / \
+            self.backend.mean(self.ref_data - noise_level, axis=0)**2
 
     @property
-    def g2_data(self):
+    def g2_data(self) -> np.ndarray:
         return self._np(self._g2)
 
     @cached_property
-    def g2(self):
+    def g2(self) -> float:
         return self.g2_data.mean()
 
     @property
-    def ghost_data(self):
-        return self._np(self.gi)
+    def ghost_data(self) -> np.ndarray:
+        return self._np(self._gi)
 
     @property
-    def timecorr_data(self):
-        return self._np(self.tc)
+    def timecorr_data(self) -> np.ndarray:
+        return self._np(self._tc)
 
     @property
-    def xycorr_data(self):
-        return self._np(self.sc)
+    def xycorr_data(self) -> np.ndarray:
+        return self._np(self._sc)
 
     @property
-    def xycorr_widths_data(self):
+    def xycorr_widths_data(self) -> np.ndarray:
         return self._np(self._sc_widths)
 
     @property
-    def contrast_data(self):
-        return self._np(self.cd)
+    def contrast_data(self) -> np.ndarray:
+        return self._np(self._cd)
 
     @cached_property
-    def contrast(self):
+    def contrast(self) -> float:
         return self.contrast_data.mean()
 
     @cached_property
-    def xycorr_width(self):
-        if self._sc_widths is None:
-            return xycorr_width(self.sc, self.sc_point, self.backend)
+    def xycorr_width(self) -> np.ndarray:
+        if (self._sc_widths == 0).all():
+            if self._sc_point is None:
+                log.exception('Spatial correlation is not calculated yet')
+                return None
+            return xycorr_width(self._sc, self._sc_point, self.backend)
         else:
             return self._sc_widths[
-                self._sc_widths > 0].reshape((2, -1)).mean(axis=1)
+                    self._sc_widths > 0].reshape((2, -1)).mean(axis=1)
 
     @cached_property
-    def timecorr_width(self):
-        return FWHM(self.tc) * self.times[1]
+    def timecorr_width(self) -> float:
+        return FWHM(self._tc) * self.times[1]
 
 
 class ImgViewer:

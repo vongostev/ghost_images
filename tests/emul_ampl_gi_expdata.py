@@ -9,13 +9,13 @@ import matplotlib.pyplot as plt
 from lightprop2d import round_hole
 from gi.emulation import GIEmulator
 
-
+# !!!TODO Переработать биннинг экспериментальных картинок
 # All input data are in cm
 # XY grid dimensions
-# ref_dir = r'H:\SciData\GI\211221_computational\patterns'
-ref_dir = r'H:\SciData\GI\23_05_H_40\23_05_H_40'
-# ref_crop = (300, 812, 0, 512)
-ref_crop = (150, 360,	70,	280)
+ref_dir = r'H:\SciData\GI\211221_computational\patterns'
+# ref_dir = r'H:\SciData\GI\23_05_H_40\23_05_H_40'
+ref_crop = (300, 812, 0, 512)
+# ref_crop = (150, 360,	70,	280)
 npoints = 256
 # XY grid widening
 area_size = 210 * 6.45  # 200 um
@@ -26,7 +26,7 @@ test = GIEmulator(area_size, npoints, wl0,
                   nimgs=1000,
                   object_gen=round_hole,
                   object_gen_args=(area_size / 4,),
-                  binning_order=2,
+                  binning_order=1,
                   expdata_dir=ref_dir,
                   expdata_crop=ref_crop,
                   img_prefix='Pattern',

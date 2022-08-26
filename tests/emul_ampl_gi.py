@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 npoints = 32
 wl0 = 0.632
-nimgs = npoints ** 2 * 8
+nimgs = npoints ** 2 
 area_size = 1000
 
 test_objects = [
@@ -39,6 +39,7 @@ for i, (obj, args) in enumerate(test_objects):
     test.xycorr_widths_data
     test.contrast_data
     test.g2_data
+
     print(test.g2)
     print(test.contrast)
     print(test.xycorr_width)
