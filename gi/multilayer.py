@@ -95,6 +95,15 @@ def filter_inverse(f: Callable) -> Callable:
     return fi
 
 
+def filter_sqr(f: Callable) -> Callable:
+
+    def fi(X: Union['numpy.ndarray', 'cupy.ndarray'],
+           Y: Union['numpy.ndarray', 'cupy.ndarray'], *args):
+        return f(X, Y, *args) ** 2
+    fi.__name__ = f'{f.__name__}_inv'
+    return fi
+
+
 def filter_from_img(path: str, npoints: int):
     img = cv2.imread(path, 0)
     img_rescaled = cv2.resize(img, dsize=(
@@ -114,7 +123,8 @@ def multilayer_object(filters: IterType[Callable],
     # O(n^2) algorithm
     partial_layers = []
     for i in range(1, len(filters) + 1):
-        lfuncs = list(map(filter_inverse, filters[:i-1])) + [filters[i-1]]
+        preslices = list(map(filter_sqr, map(filter_inverse, filters[:i-1])))
+        lfuncs = preslices + [filters[i-1]]
         if args == () or not isinstance(args[0], Iterable):
             largs = args
         else:
